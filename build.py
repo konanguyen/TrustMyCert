@@ -9,9 +9,9 @@ from hashlib import sha256
 from pathlib import Path
 from argparse import ArgumentParser
 
-MODULE_ID = "zygisk-test"
-MODULE_NAME = "Zygisk Test"
-VER_NAME = "1"
+MODULE_ID = "trustmycert"
+MODULE_NAME = "TrustMyCert"
+VER_NAME = "1.0"
 
 def initialize(args):
     global ANDROID_HOME, ANDROID_NDK_HOME, PLATFORM, CMAKE_TOOLCHAIN_FILE, ROOT_DIR, \
