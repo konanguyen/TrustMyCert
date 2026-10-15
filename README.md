@@ -104,9 +104,9 @@ validation failures can be told apart from explicit pin mismatches. Follow
 - ✅ Implemented, NDK-built for `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`,
   `riscv64`; host unit tests pass (maps parser, SHA-256/pin taxonomy).
 - ⏳ On-device hook/bypass verification pending a rooted test device.
-- Pure-Java pinning (OkHttp `CertificatePinner`, custom `TrustManager`) and
-  the Chromium/Cronet verifier cannot be hooked via Zygisk API v4 — observed
-  indirectly at best. See `docs/CONFIG.md` and `docs/TEST_PLAN.md` §D.
+- Java-layer pinning and the Chromium/Cronet verifier are out of scope
+  (sibling modules own the Java layer). See `docs/CONFIG.md` and
+  `docs/TEST_PLAN.md` §D.
 
 ## Origin
 

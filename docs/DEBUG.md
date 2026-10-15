@@ -51,7 +51,7 @@ Non-target process (must be silent apart from):
 | No logs at all for the app | Module not loaded (Zygisk off / module disabled / denylist) or wrong tag filter | Check Magisk/KernelSU module list, enable Zygisk, `adb logcat \| grep -F '[TrustMyCert]'` |
 | `Hook installation failed: Runtime.nativeLoad not found` | Unknown `Runtime` shape on this release | Pull framework descriptor per `docs/RESEARCH.md` §7, add variant |
 | `pltHookCommit returned false` | PLT commit error | Report device/ROM/ABI; module continues observe-only via discovery |
-| `no known TLS symbols resolved` | Stripped/static/custom TLS, or Java-only TLS | Expected for some apps — use the controlled test app to confirm methodology, don't assume absence of pinning |
+| `no known TLS symbols resolved` | Stripped/static/custom TLS, or app TLS that never touches native verify (e.g. Java-only path, out of scope) | Expected for some apps — use the controlled test app to confirm methodology, don't assume absence of pinning |
 | `forwarding ambiguous ... using RTLD_DEFAULT` | Multiple TLS builds in one process | Interpret verify logs cautiously; see `docs/RESEARCH.md` §4 |
 | `TEST-ONLY bypass is ENABLED` on a build you ship | Bypass flag left on | Revert `kEnableBypass`, rebuild |
 

@@ -11,21 +11,17 @@ comparison (certificate, SPKI hash, or public-key equality) is observed, e.g.
 via the controlled test app. Symbol presence alone yields the classification
 `pinning=undetermined-from-symbols`.
 
-## 1. Java / framework mechanisms
+## 1. Java / framework mechanisms — out of scope
 
-| Mechanism | Where | Relevance to native TLS |
-|---|---|---|
-| Network Security Config (+ `<pin-set>`) | `android:networkSecurityConfig`, enforced by `TrustManagerImpl` | Java-side policy; native libs bypass it entirely unless they call back into the framework verifier |
-| `X509TrustManager` / custom TrustManagers | App code, `javax.net.ssl` | Java-only, overridable per-app |
-| `TrustManagerImpl` + Conscrypt | AOSP `external/conscrypt` (`TrustManagerImpl.java` → `NativeCrypto` JNI) | Bridge: Java policy, native crypto. `checkTrustedRecursive` calls native verify; observable at the native verify boundary |
-| `SSLContext` / `SSLSocket` (JSSE) | `com.android.org.conscrypt` | Java API; native work happens in Conscrypt native code |
-| OkHttp `CertificatePinner` | `okhttp3.CertificatePinner.check()` (pure Java, SPKI `sha256/` pins) | Java-only. Zygisk API v4 **cannot** hook pure-Java methods — no ART instrumentation. Observed indirectly via the native verify calls it triggers (or doesn't) |
-| WebView / Chromium cert validation | `net/cert` (`CertVerifyProc`, `CTVerifier`) | Native C++, but inside the WebView/Chromium binary; symbols usually stripped, no stable public entry points for PLT hooking |
-| JNI bridges | `org.conscrypt.NativeCrypto` / `com.android.org.conscrypt.NativeCrypto` native methods | The Java→native transition point. Native-method hooks via `hookJniNativeMethods` work **only** here (registered natives), never on plain Java methods |
+Java-layer pinning (Network Security Config `<pin-set>`, `X509TrustManager` /
+custom trust managers, `TrustManagerImpl` policy, OkHttp `CertificatePinner`,
+WebView/Chromium validation) is **not** covered by TrustMyCert: sibling
+modules own that layer. This module instruments native verify functions only.
 
-References: [Conscrypt repo](https://github.com/google/conscrypt) (`common/src/main/java/org/conscrypt/TrustManagerImpl.java`,
-`.../NativeCrypto.java`); [OkHttp CertificatePinner](https://github.com/square/okhttp/blob/master/okhttp/src/main/kotlin/okhttp3/CertificatePinner.kt);
-[Android Network Security Config](https://developer.android.com/training/articles/security-config).
+The single fact that matters at the boundary: framework TLS (Conscrypt)
+eventually calls into native crypto, and app-bundled native TLS stacks never
+consult Java policy at all — which is exactly why native discovery and
+native hooks are a separate module's job.
 
 ## 2. Native TLS libraries
 
@@ -57,7 +53,9 @@ References: [BoringSSL ssl.h](https://github.com/google/boringssl/blob/master/in
 ### 2.3 Conscrypt native components
 - **Presence:** every app using framework TLS (`HttpsURLConnection`, `SSLSocket`) loads platform Conscrypt (`libconscrypt_jni`).
 - **Identification:** `libconscrypt_*` mappings; JNI natives under `NativeCrypto_*` symbol prefixes.
-- **Hook surface:** Java policy (`TrustManagerImpl`) + native crypto. TrustMyCert observes the shared native verify boundary (`X509_verify_cert`) rather than chasing versioned `NativeCrypto` JNI signatures.
+- **Hook surface (native side):** Conscrypt's native crypto plus the shared
+  native verify boundary (`X509_verify_cert`). Java policy above it belongs to
+  the sibling Java-layer module.
 - **No companion needed:** Conscrypt runs in-app; observing it needs no superuser IPC, which is why TrustMyCert registers no root companion.
 
 References: [Conscrypt](https://github.com/google/conscrypt) (`platform/src/main/native`).
@@ -99,19 +97,18 @@ References: [GnuTLS](https://www.gnutls.org/manual/).
 | Type | What is compared | How to recognize in assessment |
 |---|---|---|
 | Full-certificate pin | DER bytes / hash of leaf cert | Exact-match compare against embedded blob; breaks on every cert rotation |
-| SPKI pin | SHA-256 of SubjectPublicKeyInfo (OkHttp `sha256/...`) | Base64 `sha256/` constants; digest-verify helpers (`EVP_DigestVerify`, `mbedtls_pk_verify`, `RSA_verify`) near the verify path |
+| SPKI pin | SHA-256 of SubjectPublicKeyInfo (RFC 7469 `sha256/` style) | Base64 `sha256/` constants; digest-verify helpers (`EVP_DigestVerify`, `mbedtls_pk_verify`, `RSA_verify`) near the verify path |
 | Pubkey-hash pin | Hash of public key (variant of SPKI) | Same as SPKI, different hash input |
 | Chain / intermediate pin | Issuer/intermediate identity | Custom callback inspecting chain depth > 0 |
 | Custom verify callback | App function returning accept/reject | `SSL_CTX_set_verify` / `SSL_CTX_set_custom_verify` / `mbedtls` `f_vrfy` registration with a non-null function pointer |
 | Trust-store vs pin | System CA set vs embedded expected value | Failure message/behavior differs: unknown-CA vs known-CA-but-unexpected-key (the test app exercises both separately) |
-| Java vs native validation | Stack frames: `TrustManagerImpl/CertificatePinner` vs `.so` verify symbols | `adb logcat -s TrustMyCert` shows which native verify functions fire during a handshake |
 
 ## 4. Hooking architecture (trade-offs, decided)
 
 | Strategy | Verdict |
 |---|---|
 | Zygisk lifecycle (`pre/postAppSpecialize`) | Used. All registration/commit inside the specialize window; `Api` dies after it |
-| JNI native-method hooks (`hookJniNativeMethods`) | Used for `Runtime.nativeLoad` (stable, exact signatures, load monitor). **Not** usable on pure-Java pinning (`CertificatePinner.check`, `TrustManagerImpl.checkTrusted`) — ART limitation |
+| JNI native-method hooks (`hookJniNativeMethods`) | Used for `Runtime.nativeLoad` (stable, exact signatures, load monitor). Java-layer pinning methods are out of scope (sibling modules) |
 | Exported-symbol PLT hooks (`pltHookRegister/Commit`) | Used for `SSL_get_verify_result`, `X509_verify_cert`, `SSL_CTX_set_verify` (stable C ABI). Per-(lib,symbol) orig slots; single-orig fast path, `RTLD_DEFAULT` fallback with warning when several TLS builds coexist |
 | Internal-function / stripped-symbol hooks | Not in MVP: needs per-build offsets, fragile across releases |
 | Inline hooking / PLT/GOT by hand | Rejected: Zygisk already provides PLT hooking with correct cache handling; hand-rolled remapping adds crash risk for no MVP benefit |
@@ -151,7 +148,7 @@ with a threat model, not before.
 ## 7. Confirming a version-dependent signature on-device (procedure)
 
 1. `adb shell pm path <test-app>` → `adb pull` the APK; `unzip -l` for bundled `.so`.
-2. `adb shell grep -a -o -E 'SSL_do_handshake|nativeLoad|CertificatePinner' /proc/<pid>/maps`-adjacent mem or `strings` on the pulled `.so`.
+2. `adb shell grep -a -o -E 'SSL_do_handshake|nativeLoad' /proc/<pid>/maps`-adjacent mem or `strings` on the pulled `.so`.
 3. `javap`/`dexdump` on framework jars for the exact JNI descriptor on that API level.
 4. Add the (class, method, sig) triple with a byte-exact wrapper prototype, rebuild, and check logcat for `Hook installation successful` vs `failed`.
 5. Never ship a guessed triple: a non-resolving triple is harmless (skipped + logged), a resolving-but-wrong prototype corrupts the stack.

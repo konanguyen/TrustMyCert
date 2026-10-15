@@ -17,7 +17,7 @@ printf "subjectAltName=DNS:localhost,IP:127.0.0.1" > server.ext
 openssl x509 -req -in server.csr -CA test-ca.crt -CAkey test-ca.key \
   -CAcreateserial -out server.crt -days 2 -extfile server.ext 2>/dev/null
 
-# SPKI pin of the server cert (DER SPKI -> sha256 -> base64), OkHttp style.
+# SPKI pin of the server cert (DER SPKI -> sha256 -> base64), RFC 7469 style.
 openssl x509 -in server.crt -pubkey -noout \
   | openssl pkey -pubin -outform DER 2>/dev/null \
   | openssl dgst -sha256 -binary | openssl enc -base64

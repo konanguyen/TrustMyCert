@@ -49,9 +49,8 @@ Rebuild after editing: `python3 build.py zip`.
 
 ## Known limitations
 
-- Pure-Java pinning (OkHttp `CertificatePinner`, custom `TrustManager`) cannot
-  be hooked via Zygisk API v4; it is observed indirectly at the native verify
-  boundary, or not at all if the app never calls native verify.
+- Java-layer pinning (OkHttp `CertificatePinner`, `TrustManager` policy,
+  Network Security Config) is out of scope — sibling modules own it.
 - Stripped / statically linked / custom TLS: detected only if characteristic
   exports remain; otherwise reported inconclusive — confirm with the test app.
 - Cronet/Chromium verifier: detection only, no hook.

@@ -9,9 +9,9 @@
 //          Wrappers log (rate-limited) then forward to the real function.
 //
 // Deliberate non-goals, documented in docs/RESEARCH.md:
-//   - No ART Java-method hooking (Zygisk API v4 cannot hook pure-Java
-//     methods such as OkHttp CertificatePinner.check); those paths are
-//     observed indirectly through the native verify functions they call into.
+//   - Java-layer pinning (OkHttp CertificatePinner, TrustManagerImpl policy,
+//     Network Security Config) is out of scope: sibling modules own it.
+//     TrustMyCert instruments native verify functions only.
 //   - No NativeCrypto.SSL_do_handshake JNI hook: its signature is
 //     version-dependent and a mismatched wrapper prototype would corrupt the
 //     stack. Added only after confirming the exact signature on the target
