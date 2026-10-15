@@ -184,9 +184,30 @@ signal comes from three of them plus two shipped `libcoldstart.so` binaries
 
 Technique-to-module mapping: (1) → `Hooked_SSL_CTX_set_verify` (+ bypass
 flag generalizes the forced-success); (2) → Proxygen probe rows (hook
-candidate, exact-match only); (3) → mbedTLS/BoringSSL-crypto probe rows.
-Late-load handling in all three repos is "wait then hook", matching our
+candidate, exact-match only); (3) → mbedTLS/BoringSSL-crypto probe rows;
+(5) → documented as out-of-design (static patch vs runtime instrumentation).
+Late-load handling in the Frida repos is "wait then hook", matching our
 monitor-and-report design within the Zygisk commit-window constraint.
+
+5. **Mr-SxR (Facebook/Messenger) — static binary patch of `libcoldstart.so`**:
+   "Bypass Method: Binary patch, SSL verification skipped at entry point".
+   The patched library is dropped over the original at
+   `/data/data/<pkg>/lib-compressed/libcoldstart.so` via adb/MT Manager
+   (rooted), or shipped inside a pre-patched APK (non-root). No exact patch
+   offsets are published; the shipped binaries are the artifact. Category
+   note: offline binary patching defeats per-launch integrity checks only if
+   the app does not re-verify its own libraries, and it must be redone per
+   app version. TrustMyCert deliberately stays runtime-only (Zygisk
+   instrumentation, no file modification): version-agnostic reporting,
+   nothing persisted on the device, and the same build covers every target
+   app — at the cost of not working where a static patch would.
+
+Coverage note: the remaining surveyed repos (Snapchat, TikTok Lite, Twitter,
+Tinder, Edits, Instants, Messenger/Threads/Meta-Business-Suite/Instagram
+mirrors — Shajon's two accounts are byte-identical) contain screenshots,
+captured login traffic and pre-patched APK distribution only — no hook or
+patch technique to reference. Two SHAJON-404 repos were inaccessible
+(private/removed) at survey time.
 
 ## 8. Confirming a version-dependent signature on-device (procedure)
 
