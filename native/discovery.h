@@ -34,6 +34,7 @@ enum class TlsImpl {
     kOpenSsl,
     kConscryptNative,
     kCronet,
+    kProxygen,  // Meta Proxygen/Fizz stack (e.g. libcoldstart.so), BoringSSL-based
     kMbedTls,
     kWolfSsl,
     kGnuTls,

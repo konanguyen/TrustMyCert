@@ -145,7 +145,50 @@ with a threat model, not before.
 | `gnutls_certificate_verify_peers2`, `gnutls_x509_crt_verify` | GnuTLS | GnuTLS verify path |
 | `Cronet_Engine_Create`, `Cronet_UrlRequest_Create` | Cronet | Chromium stack embedded (detect-only) |
 
-## 7. Confirming a version-dependent signature on-device (procedure)
+## 7. Field references: Meta-app bypass repositories (native parts only)
+
+Surveyed 11 public SSL-pinning-bypass repos (Facebook, Instagram, Threads,
+Messenger, TikTok, Meta Business Suite families; Java/Kotlin parts ignored
+per scope). Most contain only screenshots or captured traffic; the native
+signal comes from three of them plus two shipped `libcoldstart.so` binaries
+(ARM64/x86), verified locally with `nm -D` / `readelf` / `strings`:
+
+1. **TikTok — `SSL_CTX_set_custom_verify` interception** (`tiktok_ssl_bypass.js`,
+   Frida): waits for `libttboringssl.so` / `libsscronet.so` to load (poll
+   loop), hooks the `SSL_CTX_set_custom_verify` export, wraps the app's own
+   verify callback and forces its return to `0` (`ssl_verify_ok`). This is the
+   same interception point as TrustMyCert's `Hooked_SSL_CTX_set_verify`;
+   their poll loop is the Frida equivalent of our `nativeLoad` monitor +
+   rescan. Lesson applied: `libttboringssl.so` added as a BoringSSL basename
+   hint in the probe table.
+2. **Facebook — Proxygen `verifyWithMetrics` override** (Frida): hooks the
+   *mangled, exported* symbol
+   `proxygen::SSLVerification::verifyWithMetrics(...)` inside
+   `libcoldstart.so` and forces return `1`. Confirmed present and exported
+   (`T`) in the shipped ARM64 + x86 `libcoldstart.so`, which statically links
+   BoringSSL (no `SSL_*` imports, no `libssl` NEEDED) — i.e. hooking the
+   generic `X509_verify_cert` would **not** fire here, the app-specific
+   verify entry is the only target. Lesson applied: Proxygen mangled symbols
+   added to the probe table + `TlsImpl::kProxygen` fingerprint.
+3. **Messenger — exported static-link verify symbols**: its `libcoldstart.so`
+   has *no* Proxygen verify exports but exports `mbedtls_x509_crt_verify`,
+   `mbedtls_ecdsa_verify`, `EVP_DigestVerify*`, `ECDSA_do_verify` — a
+   statically linked mbedTLS/BoringSSL-crypto mix with hookable entry points.
+   Already covered by the existing probe rows; confirms the "static but
+   exported" case is real and worth probing.
+4. **Caveat — C++ mangling varies per build**: the Frida script's
+   `verifyWithMetrics` mangling and the shipped library's differ by a
+   trailing `SSLVerifyOptions` parameter. TrustMyCert therefore probes both
+   observed variants and classifies by `proxygen` + `erify` substring, and
+   hooks only on exact `dlsym` match — never on a guessed prototype.
+
+Technique-to-module mapping: (1) → `Hooked_SSL_CTX_set_verify` (+ bypass
+flag generalizes the forced-success); (2) → Proxygen probe rows (hook
+candidate, exact-match only); (3) → mbedTLS/BoringSSL-crypto probe rows.
+Late-load handling in all three repos is "wait then hook", matching our
+monitor-and-report design within the Zygisk commit-window constraint.
+
+## 8. Confirming a version-dependent signature on-device (procedure)
 
 1. `adb shell pm path <test-app>` → `adb pull` the APK; `unzip -l` for bundled `.so`.
 2. `adb shell grep -a -o -E 'SSL_do_handshake|nativeLoad' /proc/<pid>/maps`-adjacent mem or `strings` on the pulled `.so`.

@@ -39,6 +39,20 @@ int main() {
     assert(Fingerprint(mbed, {"mbedtls_x509_crt_verify"}) == TlsImpl::kMbedTls);
     assert(Fingerprint(boring, {}) == TlsImpl::kUnknown);
 
+    // Proxygen/Fizz: exact mangled names resolve, substring rule classifies.
+    MappedLib cold;
+    cold.path = "/data/app/lib/arm64/libcoldstart.so";
+    const std::string proxygenSym =
+        "_ZN8proxygen15SSLVerification17verifyWithMetricsEbP17x509_store_ctx_stRKNSt6__ndk212"
+        "basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEEPNS0_"
+        "31SSLFailureVerificationCallbacksEPNS0_31SSLSuccessVerificationCallbacksERKNS_"
+        "15TimeUtilGenericINS3_6chrono12steady_clockEEERNS_10TraceEventERKNS_16SSLVerifyOptionsE";
+    assert(Fingerprint(cold, {proxygenSym}) == TlsImpl::kProxygen);
+    MappedLib tiktok;
+    tiktok.path = "/data/app/lib/arm64/libttboringssl.so";
+    assert(Fingerprint(tiktok, {"SSL_CTX_set_custom_verify", "SSL_get_verify_result"}) ==
+           TlsImpl::kBoringSsl);
+
     // Classification never claims pinning from symbols alone.
     std::string c = ClassifyVerification(TlsImpl::kOpenSsl, {"X509_verify_cert"});
     assert(c.find("pinning=undetermined-from-symbols") != std::string::npos);

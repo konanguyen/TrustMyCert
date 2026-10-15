@@ -19,6 +19,7 @@ const char *ToString(TlsImpl impl) {
         case TlsImpl::kOpenSsl: return "OpenSSL";
         case TlsImpl::kConscryptNative: return "Conscrypt-native";
         case TlsImpl::kCronet: return "Chromium-network-stack(Cronet)";
+        case TlsImpl::kProxygen: return "Proxygen-Fizz(BoringSSL-based)";
         case TlsImpl::kMbedTls: return "mbed-TLS";
         case TlsImpl::kWolfSsl: return "wolfSSL";
         case TlsImpl::kGnuTls: return "GnuTLS";
@@ -114,6 +115,25 @@ const ImplCandidates kCandidates[] = {
     {TlsImpl::kBoringSsl, "ssl",
      {"SSL_get_verify_result", "SSL_CTX_set_custom_verify",  // BoringSSL-only custom-verify API
       "SSL_set_custom_verify", "X509_verify_cert", "SSL_CTX_set_verify", nullptr}},
+    {TlsImpl::kBoringSsl, "ttboringssl",  // TikTok's BoringSSL build (field reference)
+     {"SSL_get_verify_result", "SSL_CTX_set_custom_verify",
+      "SSL_set_custom_verify", "X509_verify_cert", "SSL_CTX_set_verify", nullptr}},
+    // Meta Proxygen/Fizz stack: verify entry points are EXPORTED mangled C++
+    // symbols (confirmed via nm -D on libcoldstart.so, ARM64 + x86). Mangling
+    // varies per app build — both observed verifyWithMetrics variants are
+    // listed; see docs/RESEARCH.md section 8.
+    {TlsImpl::kProxygen, "coldstart",
+     {"_ZN8proxygen15SSLVerification17verifyWithMetricsEbP17x509_store_ctx_stRKNSt6__ndk212"
+      "basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEEPNS0_"
+      "31SSLFailureVerificationCallbacksEPNS0_31SSLSuccessVerificationCallbacksERKNS_"
+      "15TimeUtilGenericINS3_6chrono12steady_clockEEERNS_10TraceEventE",
+      "_ZN8proxygen15SSLVerification17verifyWithMetricsEbP17x509_store_ctx_stRKNSt6__ndk212"
+      "basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEEPNS0_"
+      "31SSLFailureVerificationCallbacksEPNS0_31SSLSuccessVerificationCallbacksERKNS_"
+      "15TimeUtilGenericINS3_6chrono12steady_clockEEERNS_10TraceEventERKNS_16SSLVerifyOptionsE",
+      "_ZN8proxygen15SSLVerification24SSLVerificationCallbacks20verifySSLCertificateERKNSt6__"
+      "ndk212basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEP17x509_store_ctx_st",
+      "SSL_CTX_set_custom_verify", nullptr}},
     {TlsImpl::kBoringSsl, "crypto",
      {"X509_verify_cert", "EVP_DigestVerify", "RSA_verify", nullptr}},
     {TlsImpl::kOpenSsl, "ssl",
@@ -183,6 +203,12 @@ TlsImpl Fingerprint(const MappedLib &lib, const std::vector<std::string> &found)
     if (Contains(base, "cronet") && has("Cronet_Engine_Create")) return TlsImpl::kCronet;
     if (Contains(base, "conscrypt")) return TlsImpl::kConscryptNative;
     for (const auto &f : found) {
+        // Mangled C++ verify entry points (Proxygen/Fizz): substring match is
+        // deliberate — exact mangling varies per app build (see RESEARCH §8).
+        if (f.find("proxygen") != std::string::npos && f.find("erify") != std::string::npos)
+            return TlsImpl::kProxygen;
+    }
+    for (const auto &f : found) {
         if (f.rfind("mbedtls_", 0) == 0) return TlsImpl::kMbedTls;
         if (f.rfind("wolfSSL_", 0) == 0) return TlsImpl::kWolfSsl;
         if (f.rfind("gnutls_", 0) == 0) return TlsImpl::kGnuTls;
@@ -202,7 +228,8 @@ std::string ClassifyVerification(TlsImpl impl, const std::vector<std::string> &f
     for (const auto &f : found) {
         if (f == "X509_verify_cert" || f == "mbedtls_x509_crt_verify" ||
             f == "wolfSSL_X509_verify_cert" || f == "gnutls_x509_crt_verify" ||
-            f == "gnutls_certificate_verify_peers2")
+            f == "gnutls_certificate_verify_peers2" ||
+            f.find("proxygen") != std::string::npos)  // mangled C++ verify entry
             hasVerify = true;
         if (f == "SSL_CTX_set_custom_verify" || f == "SSL_set_custom_verify" ||
             f == "SSL_CTX_set_cert_verify_callback" || f == "SSL_CTX_set_verify")
