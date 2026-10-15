@@ -53,6 +53,21 @@ int main() {
     assert(Fingerprint(tiktok, {"SSL_CTX_set_custom_verify", "SSL_get_verify_result"}) ==
            TlsImpl::kBoringSsl);
 
+    // Liger stack: basename rule + third mangling variant (__ndk112).
+    MappedLib liger;
+    liger.path = "/data/app/lib/arm64/libliger.so";
+    const std::string ligerSym =
+        "_ZN8proxygen15SSLVerification17verifyWithMetricsEbP17x509_store_ctx_stRKNSt6__ndk112"
+        "basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEEPNS0_"
+        "31SSLFailureVerificationCallbacksEPNS0_31SSLSuccessVerificationCallbacksERKNS_"
+        "15TimeUtilGenericINS3_6chrono12steady_clockEEERNS_10TraceEventE";
+    assert(Fingerprint(liger, {ligerSym}) == TlsImpl::kProxygen);
+
+    // Stripped carriers: basename hint only, never identification.
+    assert(IsKnownStrippedCarrier("/data/app/lib/arm64/libflutter.so"));
+    assert(IsKnownStrippedCarrier("/data/app/lib/arm64/libapp.so"));
+    assert(!IsKnownStrippedCarrier("/system/lib64/libssl.so"));
+
     // Classification never claims pinning from symbols alone.
     std::string c = ClassifyVerification(TlsImpl::kOpenSsl, {"X509_verify_cert"});
     assert(c.find("pinning=undetermined-from-symbols") != std::string::npos);

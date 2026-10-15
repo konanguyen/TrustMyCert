@@ -95,6 +95,8 @@ lives above chain validation (AGENTS.md §3C).
 | Discovery + fingerprint + reporting | implemented, NDK-built (all ABIs), host-tested (parser) |
 | JNI `nativeLoad` monitor | implemented, NDK-built, **unverified on device** |
 | PLT observe-only wrappers | implemented, NDK-built, **unverified on device** |
-| Test-only bypass | implemented, default OFF, **unverified on device** |
+| Test-only bypass | implemented (failure-only override), default OFF, **unverified on device** |
+| Flutter stripped-carrier reporting | implemented, NDK-built, host-tested (basename rules) |
+| Proxygen 3rd mangling variant + Liger | implemented, NDK-built, host-tested |
 | Test lib + server + APK stub | implemented, host-verified (lib+server); APK assembly needs Android Studio + device |
 | On-device log confirmation | **not done** — no rooted device available |

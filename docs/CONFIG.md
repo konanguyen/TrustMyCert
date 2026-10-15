@@ -12,7 +12,7 @@ module; no root companion or config-file IPC is needed).
 | `kEnableNativeHooks` | `true` | PLT-hook `SSL_get_verify_result`, `X509_verify_cert`, `SSL_CTX_set_verify` (observe-only) |
 | `kVerbose` | `false` | Extra per-library / per-symbol lines |
 | `kMaxHotPathLogs` | `16` | Cap on log lines from hot-path wrappers per process |
-| **`kEnableBypass`** | **`false`** | **TEST-ONLY: force verification success. Weakens TLS process-wide. Never ship enabled.** |
+| **`kEnableBypass`** | **`false`** | **TEST-ONLY: override verification *failures* with success (genuine successes pass through untouched — failure-only semantics). Weakens TLS process-wide. Never ship enabled.** |
 
 ## Selecting target apps
 

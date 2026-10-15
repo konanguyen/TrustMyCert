@@ -110,9 +110,9 @@ References: [GnuTLS](https://www.gnutls.org/manual/).
 | Zygisk lifecycle (`pre/postAppSpecialize`) | Used. All registration/commit inside the specialize window; `Api` dies after it |
 | JNI native-method hooks (`hookJniNativeMethods`) | Used for `Runtime.nativeLoad` (stable, exact signatures, load monitor). Java-layer pinning methods are out of scope (sibling modules) |
 | Exported-symbol PLT hooks (`pltHookRegister/Commit`) | Used for `SSL_get_verify_result`, `X509_verify_cert`, `SSL_CTX_set_verify` (stable C ABI). Per-(lib,symbol) orig slots; single-orig fast path, `RTLD_DEFAULT` fallback with warning when several TLS builds coexist |
-| Internal-function / stripped-symbol hooks | Not in MVP: needs per-build offsets, fragile across releases |
+| Internal-function / stripped-symbol hooks | Not in MVP as hooks: needs per-build offsets, fragile across releases. Methodology documented instead — string-anchor recon: `strings`/`rabin2 -z` for `handshake.cc`, `ssl_client`, `Socket_CreateConnect`, X509 error strings and the Dart VM version, then xref to referencing functions in r2/Frida (field refs: FlutterTap `addr_resolver`, wargaintibumi `locate_ssl_verify.sh`). TrustMyCert reports stripped carriers (`libflutter.so`, `libapp.so`) with this recon advice |
 | Inline hooking / PLT/GOT by hand | Rejected: Zygisk already provides PLT hooking with correct cache handling; hand-rolled remapping adds crash risk for no MVP benefit |
-| Dobby / ShadowHook | Evaluated, **not vendored**: extra license/build/ABI surface; incompatible-without-verification on this template's NDK matrix. Revisit only with a per-ABI compatibility table |
+| Dobby / ShadowHook | Evaluated, **not vendored**: extra license/build/ABI surface; incompatible-without-verification on this template's NDK matrix. Field validation: FlutterTap (C++ Zygisk, Dobby `DobbyHook`/`DobbyInstrument` vendored, Capstone-assisted) uses Dobby precisely because its target (`libflutter.so`) loads *after* the Zygisk PLT commit window — confirming both the commit-window constraint above and that inline hooking is the correct tool for late-loaded/stripped targets. Revisit for TrustMyCert only with a per-ABI compatibility table + a late-load use case that PLT hooks cannot cover |
 | Late-loaded libraries | Reported (discovery rescan on `nativeLoad`), **not** PLT-hooked: commit window is closed post-specialization (API limitation, logged as diagnostic) |
 | Behavior-changing bypass | Implemented **only** behind `config::kEnableBypass=false` default; enabling weakens TLS process-wide — test-only, see `docs/CONFIG.md` |
 
@@ -212,7 +212,42 @@ captured login traffic and pre-patched APK distribution only — no hook or
 patch technique to reference. Two SHAJON-404 repos were inaccessible
 (private/removed) at survey time.
 
-## 8. Confirming a version-dependent signature on-device (procedure)
+## 9. Topic-wide survey (`ssl-pinning-bypass`, 74 repos)
+
+Method: GitHub topic search, Android-only (iOS excluded), Java/Kotlin parts
+ignored per scope; ~47 new repos cloned to scratch, native techniques
+extracted. Result: no new hook *primitives* beyond §7 — but significant
+confirmation and three additions:
+
+- **Third Proxygen mangling variant** (`__ndk112`, in `libliger.so` /
+  `libliger-native.so` — Meta's older Liger stack; modern Meta apps route
+  through Tigon, whose public bypass scripts are Java-only). Added to the
+  probe table + `liger` basename rule (field ref: KnifeLemon
+  `generic-ssl-unpinning.js`, mirrored by consenting-hemogenesis659).
+- **Failure-only override semantics** (field ref: fentia `dy_bypass_ssl_verify.js`,
+  Douyin+BoringSSL): the bypass wraps `SSL_CTX_set_custom_verify` /
+  `SSL_set_custom_verify` / `SSL_CTX_set_verify` callbacks and replaces the
+  return value **only when it indicates failure** (`> 0` → `0`), preserving
+  genuine successes. TrustMyCert's test-only bypass now uses the same
+  semantics (call orig first, override failures only).
+- **Flutter stripped-stack playbook** (field refs: FlutterTap Zygisk module;
+  Frida-Toolkit `ssl_verify_peer_cert` / `ssl_crypto_x509_session_verify_cert_chain` /
+  `CertificateCallback` pattern scripts; wargaintibumi recon scripts):
+  `libflutter.so` embeds BoringSSL with no usable exports, so the field
+  converges on (a) string-anchor resolution (`ssl_client`, `handshake.cc`,
+  `Socket_CreateConnect`) + disassembly, and (b) hooking internal
+  `ssl_verify_peer_cert` / `verify_cert_chain` with inline hooks (Dobby),
+  because the library loads after any PLT commit window. TrustMyCert covers
+  (a) via stripped-carrier reporting + this recon procedure; (b) remains a
+  documented future hook requiring the Dobby decision above.
+- **Negative results** (equally important): Snapchat/TikTok-Lite/Twitter/
+  Tinder/Edits/Instants topic repos are pre-patched-APK distribution +
+  marketing READMEs; `login.py`/`traffic.sh` files are captured-traffic
+  replay, not bypass techniques; generic APK patchers (Frida-gadget
+  injection) are infra, not pinning techniques. Nothing here changes the
+  module's hook set.
+
+## 10. Confirming a version-dependent signature on-device (procedure)
 
 1. `adb shell pm path <test-app>` → `adb pull` the APK; `unzip -l` for bundled `.so`.
 2. `adb shell grep -a -o -E 'SSL_do_handshake|nativeLoad' /proc/<pid>/maps`-adjacent mem or `strings` on the pulled `.so`.

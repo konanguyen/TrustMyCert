@@ -20,6 +20,7 @@ const char *ToString(TlsImpl impl) {
         case TlsImpl::kConscryptNative: return "Conscrypt-native";
         case TlsImpl::kCronet: return "Chromium-network-stack(Cronet)";
         case TlsImpl::kProxygen: return "Proxygen-Fizz(BoringSSL-based)";
+        case TlsImpl::kFlutter: return "Flutter-embedded-BoringSSL(basename-hint-only)";
         case TlsImpl::kMbedTls: return "mbed-TLS";
         case TlsImpl::kWolfSsl: return "wolfSSL";
         case TlsImpl::kGnuTls: return "GnuTLS";
@@ -114,7 +115,8 @@ struct ImplCandidates {
 const ImplCandidates kCandidates[] = {
     {TlsImpl::kBoringSsl, "ssl",
      {"SSL_get_verify_result", "SSL_CTX_set_custom_verify",  // BoringSSL-only custom-verify API
-      "SSL_set_custom_verify", "X509_verify_cert", "SSL_CTX_set_verify", nullptr}},
+      "SSL_set_custom_verify", "X509_verify_cert", "SSL_CTX_set_verify",
+      "SSL_verify_cert_chain", "X509_STORE_CTX_set_verify_cb", nullptr}},
     {TlsImpl::kBoringSsl, "ttboringssl",  // TikTok's BoringSSL build (field reference)
      {"SSL_get_verify_result", "SSL_CTX_set_custom_verify",
       "SSL_set_custom_verify", "X509_verify_cert", "SSL_CTX_set_verify", nullptr}},
@@ -134,21 +136,35 @@ const ImplCandidates kCandidates[] = {
       "_ZN8proxygen15SSLVerification24SSLVerificationCallbacks20verifySSLCertificateERKNSt6__"
       "ndk212basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEP17x509_store_ctx_st",
       "SSL_CTX_set_custom_verify", nullptr}},
+    // Meta's older Liger stack (libliger.so / libliger-native.so): same
+    // Proxygen verify entry, third mangling variant (__ndk112). Field ref:
+    // generic-ssl-unpinning.js (KnifeLemon). See docs/RESEARCH.md section 7.
+    {TlsImpl::kProxygen, "liger",
+     {"_ZN8proxygen15SSLVerification17verifyWithMetricsEbP17x509_store_ctx_stRKNSt6__ndk112"
+      "basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEEPNS0_"
+      "31SSLFailureVerificationCallbacksEPNS0_31SSLSuccessVerificationCallbacksERKNS_"
+      "15TimeUtilGenericINS3_6chrono12steady_clockEEERNS_10TraceEventE",
+      "_ZN8proxygen15SSLVerification24SSLVerificationCallbacks20verifySSLCertificateERKNSt6__"
+      "ndk212basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEP17x509_store_ctx_st",
+      "SSL_CTX_set_custom_verify", nullptr}},
     {TlsImpl::kBoringSsl, "crypto",
      {"X509_verify_cert", "EVP_DigestVerify", "RSA_verify", nullptr}},
     {TlsImpl::kOpenSsl, "ssl",
      {"SSL_get_verify_result", "SSL_CTX_set_verify", "X509_verify_cert",
-      "SSL_CTX_set_cert_verify_callback", nullptr}},  // cert-verify-callback: OpenSSL >= 1.0.2 style
+      "SSL_CTX_set_cert_verify_callback", "SSL_verify_cert_chain",
+      "X509_STORE_CTX_set_verify_cb", nullptr}},  // cert-verify-callback: OpenSSL >= 1.0.2 style
     {TlsImpl::kConscryptNative, "conscrypt",
      {"NativeCrypto_SSL_do_handshake", "X509_verify_cert", "SSL_get_verify_result", nullptr}},
     {TlsImpl::kCronet, "cronet",
      {"Cronet_Engine_Create", "Cronet_UrlRequest_Create", nullptr}},  // intentionally short: Cronet strips most symbols
     {TlsImpl::kMbedTls, "mbedtls",
-     {"mbedtls_ssl_get_verify_result", "mbedtls_x509_crt_verify", "mbedtls_ssl_set_hostname", nullptr}},
+     {"mbedtls_ssl_get_verify_result", "mbedtls_x509_crt_verify", "mbedtls_ssl_set_hostname",
+      "mbedtls_ssl_conf_authmode", nullptr}},
     {TlsImpl::kMbedTls, "mbedcrypto",
      {"mbedtls_x509_crt_verify", "mbedtls_pk_verify", nullptr}},
     {TlsImpl::kMbedTls, "mbedtls",
-     {"mbedtls_ssl_get_verify_result", "mbedtls_x509_crt_verify", "mbedtls_ssl_set_hostname", nullptr}},
+     {"mbedtls_ssl_get_verify_result", "mbedtls_x509_crt_verify", "mbedtls_ssl_set_hostname",
+      "mbedtls_ssl_conf_authmode", nullptr}},
     {TlsImpl::kWolfSsl, "wolfssl",
      {"wolfSSL_CTX_set_verify", "wolfSSL_get_verify_result", "wolfSSL_X509_verify_cert", nullptr}},
     {TlsImpl::kGnuTls, "gnutls",
@@ -202,6 +218,7 @@ TlsImpl Fingerprint(const MappedLib &lib, const std::vector<std::string> &found)
         return TlsImpl::kBoringSsl;
     if (Contains(base, "cronet") && has("Cronet_Engine_Create")) return TlsImpl::kCronet;
     if (Contains(base, "conscrypt")) return TlsImpl::kConscryptNative;
+    if (Contains(base, "liger")) return TlsImpl::kProxygen;  // Meta Liger stack
     for (const auto &f : found) {
         // Mangled C++ verify entry points (Proxygen/Fizz): substring match is
         // deliberate — exact mangling varies per app build (see RESEARCH §8).
@@ -221,6 +238,15 @@ TlsImpl Fingerprint(const MappedLib &lib, const std::vector<std::string> &found)
     }
     if (has("SSL_get_verify_result") || has("X509_verify_cert")) return TlsImpl::kCustomStatic;
     return TlsImpl::kUnknown;
+}
+
+bool IsKnownStrippedCarrier(const std::string &path) {
+    std::size_t i = path.find_last_of('/');
+    const char *base = path.c_str() + (i == std::string::npos ? 0 : i + 1);
+    // Flutter embeds a full BoringSSL with no exported verify symbols;
+    // libapp.so is the Dart AOT companion. Basename hint only — reported
+    // with recon advice, never as identification.
+    return std::strcmp(base, "libflutter.so") == 0 || std::strcmp(base, "libapp.so") == 0;
 }
 
 std::string ClassifyVerification(TlsImpl impl, const std::vector<std::string> &found) {

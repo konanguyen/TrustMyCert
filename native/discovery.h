@@ -35,6 +35,7 @@ enum class TlsImpl {
     kConscryptNative,
     kCronet,
     kProxygen,  // Meta Proxygen/Fizz stack (e.g. libcoldstart.so), BoringSSL-based
+    kFlutter,   // Flutter-embedded BoringSSL carrier (libflutter.so), see IsKnownStrippedCarrier
     kMbedTls,
     kWolfSsl,
     kGnuTls,
@@ -67,6 +68,12 @@ std::vector<SymbolProbe> ProbeTlsSymbols(const std::vector<MappedLib> &libs);
 
 // Fingerprint one library from its path hint + resolved symbols.
 TlsImpl Fingerprint(const MappedLib &lib, const std::vector<std::string> &foundSymbols);
+
+// Basename-only hint for known stripped TLS carriers: libraries that embed a
+// full TLS stack but export no verify symbols (confirmed in the field, e.g.
+// Flutter's statically linked BoringSSL). Reported as a diagnostic with recon
+// advice — never as a positive identification (see docs/RESEARCH.md).
+bool IsKnownStrippedCarrier(const std::string &path);
 
 // Human-readable classification of the pinning/verification mechanism that
 // the observed symbols suggest. Never claims "pinning" for plain CA

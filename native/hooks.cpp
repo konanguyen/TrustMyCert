@@ -111,9 +111,18 @@ long Hooked_SSL_get_verify_result(const void *ssl) {
         orig = PickOrig(g_orig_get_verify_result, "SSL_get_verify_result", warned);
     }
     if (config::kEnableBypass) {
+        // TEST-ONLY, failure-only override (field technique: flip failures,
+        // preserve successes — minimizes behavioral delta vs blanket allow).
+        long real = orig ? orig(ssl) : -1L;
+        if (real != 0) {
+            if (ShouldLog(g_log_count_verify_result))
+                TMC_LOGW("Hook SSL_get_verify_result: BYPASS active, failure %ld forced to X509_V_OK",
+                         real);
+            return 0;  // X509_V_OK
+        }
         if (ShouldLog(g_log_count_verify_result))
-            TMC_LOGW("Hook SSL_get_verify_result: BYPASS active, forcing X509_V_OK (test-only)");
-        return 0;  // X509_V_OK
+            TMC_LOGI("Hook SSL_get_verify_result -> %ld (genuine success, kept)", real);
+        return real;
     }
     long r = orig ? orig(ssl) : -1L;
     if (ShouldLog(g_log_count_verify_result))
@@ -129,9 +138,16 @@ int Hooked_X509_verify_cert(void *ctx) {
         orig = PickOrig(g_orig_verify_cert, "X509_verify_cert", warned);
     }
     if (config::kEnableBypass) {
+        // TEST-ONLY, failure-only override (see above).
+        int real = orig ? orig(ctx) : 0;
+        if (real != 1) {
+            if (ShouldLog(g_log_count_verify_cert))
+                TMC_LOGW("Hook X509_verify_cert: BYPASS active, failure %d forced to success", real);
+            return 1;
+        }
         if (ShouldLog(g_log_count_verify_cert))
-            TMC_LOGW("Hook X509_verify_cert: BYPASS active, forcing success (test-only)");
-        return 1;
+            TMC_LOGI("Hook X509_verify_cert -> 1 (genuine success, kept)");
+        return real;
     }
     int r = orig ? orig(ctx) : 0;
     if (ShouldLog(g_log_count_verify_cert)) TMC_LOGI("Hook X509_verify_cert -> %d", r);

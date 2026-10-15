@@ -48,7 +48,6 @@ void RunDiscoveryReport() {
     if (probes.empty()) {
         TMC_LOGI("Diagnostic result: no known TLS symbols resolved in loaded libraries");
         TMC_LOGI("Diagnostic result: static-link/stripped candidates need controlled-test confirmation");
-        return;
     }
     std::size_t n = 0;
     for (const auto &pr : probes) {
@@ -68,6 +67,21 @@ void RunDiscoveryReport() {
             TMC_LOGI("Candidate verification function discovered: %s", syms.c_str());
         }
         if (++n >= trustmycert::config::kMaxLibsLogged) break;
+    }
+    // Known stripped carriers (e.g. Flutter): basename hint + recon advice.
+    for (const auto &m : libs) {
+        if (!trustmycert::discovery::IsKnownStrippedCarrier(m.path)) continue;
+        bool probed = false;
+        for (const auto &pr : probes)
+            if (pr.lib_path == m.path) {
+                probed = true;
+                break;
+            }
+        if (probed) continue;
+        TMC_LOGI("TLS implementation identified: Flutter-embedded-BoringSSL(stripped, exports-none) (%s)",
+                 m.path.c_str());
+        TMC_LOGI("Diagnostic result: stripped carrier, no exported verify symbols; "
+                 "use string-anchor recon (ssl_verify_peer_cert/handshake.cc) per docs/RESEARCH.md");
     }
 }
 
