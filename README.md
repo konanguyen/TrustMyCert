@@ -1,61 +1,115 @@
 # TrustMyCert
 
-Zygisk-based Android security testing module for researching and testing
-SSL/TLS certificate pinning inside **native** libraries. For authorized
-testing of apps you own or are explicitly permitted to assess — nothing here
-weakens TLS unless you deliberately enable the test-only bypass.
+Zygisk module for researching and testing SSL/TLS certificate pinning
+implemented inside **native** Android libraries (`.so` files).
 
-## What it does
+For authorized security testing only — apps you own or are explicitly
+permitted to assess. The module is observe-only by default and weakens
+nothing unless you deliberately enable the test-only bypass.
 
-- **Discovery:** enumerates loaded `.so` files from `/proc/self/maps`,
-  probes TLS exported symbols (`dlopen(RTLD_NOLOAD)` — never loads new code),
-  fingerprints the TLS implementation (BoringSSL / OpenSSL-compatible /
-  Conscrypt-native / Cronet / mbed TLS / wolfSSL / GnuTLS / custom-static).
-- **Scoped instrumentation (observe-only by default):** JNI hook on
-  `Runtime.nativeLoad` (load monitor) + PLT hooks on `SSL_get_verify_result`,
-  `X509_verify_cert`, `SSL_CTX_set_verify` with rate-limited logging and
-  exact-orig forwarding.
-- **Diagnostics:** every line carries the `[TrustMyCert]` marker on tag
-  `TrustMyCert`. Bypass builds identify themselves in logcat.
-- **Safety:** allowlisted target apps only, `system_server` never touched,
-  fail-safe hook installation, no secrets in logs, bypass behind
-  `kEnableBypass=false` default.
+## Features
 
-## Build
+- **Native library discovery** — enumerates loaded `.so` files from
+  `/proc/self/maps` (name, arch, mappings) without trusting filenames alone.
+- **TLS fingerprinting** — probes exported symbols with
+  `dlopen(path, RTLD_NOLOAD)` (never loads new code) and identifies
+  BoringSSL, OpenSSL-compatible, Conscrypt-native, Cronet, mbed TLS,
+  wolfSSL, GnuTLS, or custom/statically-linked stacks. Inconclusive results
+  are reported as such, never guessed.
+- **Scoped instrumentation** — JNI hook on `Runtime.nativeLoad` (library-load
+  monitor) plus PLT hooks on `SSL_get_verify_result`, `X509_verify_cert` and
+  `SSL_CTX_set_verify`. Wrappers log (rate-limited) and forward to the exact
+  original function.
+- **Searchable diagnostics** — every log line carries the `[TrustMyCert]`
+  marker on the `TrustMyCert` tag, with process name, library and symbol
+  context. No private keys, tokens, cookies or payloads are ever logged.
+- **Safety first** — only explicitly allowlisted test apps are instrumented;
+  `system_server` and all other processes are skipped and the library is
+  `dlclose`d there. Hook failures never crash the target app. Any
+  behavior-changing certificate override stays behind the `kEnableBypass`
+  flag (default `false`).
+
+## Requirements
+
+| Tool | Version / note |
+|---|---|
+| Android SDK + NDK | NDK `29.0.14206865`, platform `android-26` (Android 8.0+) |
+| `ANDROID_HOME` (or `ANDROID_SDK_ROOT`) | must point at the SDK |
+| `cmake`, `ninja`, `python3`, `git`, `adb` | build + deploy |
+| Rooted device/emulator + Zygisk | Magisk, KernelSU/ZygiskNext or APatch; module install only |
+
+Setup example (Ubuntu):
 
 ```bash
-export ANDROID_HOME=$HOME/Android/Sdk   # NDK 29.0.14206865, platform android-26
-python3 build.py config [-a abi]        # generate compile_commands.json
-python3 build.py zip                    # module zip -> release/
-python3 build.py flash [--reboot]       # build + install via root (Magisk/KSU/APatch)
+sudo apt install ninja-build
+# install Android cmdline-tools, then:
+sdkmanager "platforms;android-26" "ndk;29.0.14206865"
+export ANDROID_HOME=$HOME/Android/Sdk
 ```
 
-Requires: Android SDK + NDK `29.0.14206865`, `cmake`, `ninja`, `python3`,
-`adb`. Zygisk API v4, ABIs: `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`,
-`riscv64`.
+## Build, install, run
 
-## Docs
+```bash
+python3 build.py config [-a abi]   # compile_commands.json for clangd
+python3 build.py build [-a abi]    # build .so for one ABI
+python3 build.py zip               # full module zip (all ABIs) -> release/
+python3 build.py flash [--reboot]  # build + install onto device via root
+```
 
-- `docs/RESEARCH.md` — native TLS/pinning research + symbol reference + hooking trade-offs
-- `docs/CONFIG.md` — target selection, flags, bypass policy, support matrix
-- `docs/TEST_PLAN.md` — host tests, on-device procedure, expected logs, status ledger
-- `docs/DEBUG.md` — log filtering, failure table
-- `test/` — native test lib (chain/pin/SPKI, JNI bridge), test TLS server, cert scripts, APK stub
+Then:
 
-## Logs
+1. Enable the module (and Zygisk) in the Magisk/KernelSU/APatch app, reboot.
+2. Add your authorized test app's package to `kTargetApps` in
+   `native/config.h` and rebuild (default: `com.example.trustmycert.test`).
+3. Launch the test app and watch logcat:
 
 ```bash
 adb logcat -s TrustMyCert
 adb logcat | grep -F '[TrustMyCert]'
 ```
 
-## Status
+Expected sequence: `Module initialized` → `Target process selected` →
+`TLS implementation identified` → `Pinning mechanism: ...` → hook commit
+results. See `docs/DEBUG.md` for the full log reference and failure table.
 
-Implemented + NDK-built (all ABIs) + host-tested (parser, SHA-256/pin
-taxonomy). On-device hook/bypass verification pending a rooted test device —
-see `docs/TEST_PLAN.md` section D.
+## Project structure
 
-## See also
+```
+native/               module source (trustmycert.cpp, discovery.*, hooks.*)
+  zygisk.hpp          Zygisk API v4 header (do not modify)
+template/             Magisk module packaging (module.prop, customize.sh, ...)
+docs/
+  RESEARCH.md         native TLS/pinning research, symbol reference, hook trade-offs
+  CONFIG.md           flags, target selection, bypass policy, support matrix
+  TEST_PLAN.md        host tests, on-device procedure, expected logs
+  DEBUG.md            debugging guide
+test/
+  native_testlib/     controlled JNI test lib (chain / cert-pin / SPKI-pin)
+  app_stub/           minimal test APK harness source
+  server.py           controlled TLS test server (test certs only)
+  gen_certs.sh        test-only certificate generator
+build.py              CMake/NDK build, packaging, flash orchestration
+```
 
-- Template origin: https://github.com/topjohnwu/zygisk-module-sample (Zygisk API v4 header kept unmodified in `native/zygisk.hpp`)
-- Development: LLVM clangd, VSCode + Clangd plugin, Android NDK, CMake
+## Controlled testing
+
+`test/` provides a full ground-truth harness: a native library exercising
+standard chain validation, certificate pin and SPKI pin (success + failure
+cases), a local TLS server and short-lived test certificates — so CA
+validation failures can be told apart from explicit pin mismatches. Follow
+`docs/TEST_PLAN.md`.
+
+## Status & limitations
+
+- ✅ Implemented, NDK-built for `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`,
+  `riscv64`; host unit tests pass (maps parser, SHA-256/pin taxonomy).
+- ⏳ On-device hook/bypass verification pending a rooted test device.
+- Pure-Java pinning (OkHttp `CertificatePinner`, custom `TrustManager`) and
+  the Chromium/Cronet verifier cannot be hooked via Zygisk API v4 — observed
+  indirectly at best. See `docs/CONFIG.md` and `docs/TEST_PLAN.md` §D.
+
+## Origin
+
+Built on the Zygisk module template (Zygisk API v4, originally demoing
+`example.cpp`/companion IPC — both replaced: TrustMyCert needs no root
+companion). See also: https://github.com/topjohnwu/zygisk-module-sample
