@@ -147,11 +147,14 @@ with a threat model, not before.
 
 ## 7. Field references: Meta-app bypass repositories (native parts only)
 
-Surveyed 11 public SSL-pinning-bypass repos (Facebook, Instagram, Threads,
-Messenger, TikTok, Meta Business Suite families; Java/Kotlin parts ignored
-per scope). Most contain only screenshots or captured traffic; the native
-signal comes from three of them plus two shipped `libcoldstart.so` binaries
-(ARM64/x86), verified locally with `nm -D` / `readelf` / `strings`:
+Surveyed 29 public SSL-pinning-bypass repos across 0xSHAK1B, shajon-dev,
+SHAJON-404 (Shajon's two accounts are byte-identical mirrors) and Mr-SxR —
+Facebook, Instagram, Threads, Messenger, TikTok (+Lite), Snapchat, Twitter,
+Tinder, Edits, Instants, Meta Business Suite families, iOS repos excluded;
+Java/Kotlin parts ignored per scope. Most contain only screenshots, captured
+traffic or pre-patched APK distribution; the native signal comes from the
+sources below plus two shipped `libcoldstart.so` binaries (ARM64/x86),
+verified locally with `nm -D` / `readelf` / `strings`:
 
 1. **TikTok — `SSL_CTX_set_custom_verify` interception** (`tiktok_ssl_bypass.js`,
    Frida): waits for `libttboringssl.so` / `libsscronet.so` to load (poll
