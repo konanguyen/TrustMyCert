@@ -1,5 +1,16 @@
 # TrustMyCert — Debugging guide
 
+## Build channel first
+
+| Build | How to identify | Logs available |
+|---|---|---|
+| debug | `module.prop` version ends in `-debug` (and the zip file name contains `-debug`) | debug, info, warning, error |
+| product | plain `MAJOR.MINOR.PATCH` version | error only |
+
+A product build is intentionally silent when it works. If you need discovery,
+config or hook-trace lines, flash the debug zip from the release
+(`TrustMyCert-<version>-debug-<commit>.zip`).
+
 ## Log filtering
 
 Primary (by tag):
@@ -21,7 +32,19 @@ adb logcat -c
 adb logcat -s TrustMyCert > trustmycert.log
 ```
 
+From the WebUI, the **Debug info** card shows the effective config and a
+200-line module log tail. It runs the fixed command `tmc logs 200`; the same
+read-only command is available from a root shell:
+
+```bash
+/data/adb/modules/trustmycert/bin/tmc logs 200
+```
+
+The log tail is scoped to the `TrustMyCert` tag, not to app payloads.
+
 ## Expected log sequence (target app launch)
+
+This sequence is from a **debug** build. A product build emits only error lines.
 
 ```
 [TrustMyCert] Module initialized (Zygisk API 4)

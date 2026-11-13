@@ -69,6 +69,15 @@ CMD=$(printf '%s' "$CMD" | tr -d '\r\n')
 # Strict whitelist: exactly the tmc commands exposed by the UI.
 case "$CMD" in
     "list" | "apps" | "path" | "validate") ;;
+    "logs") ;;
+    "logs "*)
+        LINES=${CMD#logs }
+        case "$LINES" in
+            "" | *[!0-9]*) fail "400 Bad Request" "invalid log line count" ;;
+        esac
+        [ "$LINES" -ge 1 ] && [ "$LINES" -le 500 ] ||
+            fail "400 Bad Request" "log line count must be 1-500"
+        ;;
     "get enabled" | "get bypass" | "get verbose" | "get match_subprocesses" | \
         "get targets" | "get path") ;;
     "set enabled 0" | "set enabled 1" | "set bypass 0" | "set bypass 1" | \

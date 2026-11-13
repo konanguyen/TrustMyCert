@@ -29,19 +29,23 @@ g++ -std=c++17 -Wall -Wextra -Itest/host_stubs -Inative \
 # expected: RUNTIME CONFIG HOST TESTS PASSED
 
 # CLI (TMC_CONFIG points at a scratch file)
-TMC_CONFIG=/tmp/opencode/tmc_test.conf sh template/bin/tmc add com.example.app
-TMC_CONFIG=/tmp/opencode/tmc_test.conf sh template/bin/tmc list
-TMC_CONFIG=/tmp/opencode/tmc_test.conf sh template/bin/tmc validate
+TMC_CONFIG=/tmp/opencode/tmc_test.conf sh module/bin/tmc add com.example.app
+TMC_CONFIG=/tmp/opencode/tmc_test.conf sh module/bin/tmc list
+TMC_CONFIG=/tmp/opencode/tmc_test.conf sh module/bin/tmc validate
 # expected: added / enabled=1 + target=com.example.app / ok: ... (1 targets)
+
+# module log tail (TMC_LOGCAT is a host test shim)
+TMC_LOGCAT=/tmp/opencode/fake-logcat sh module/bin/tmc logs 20
+# expected: the last N TrustMyCert lines from logcat
 
 # CGI whitelist (host sh; wrapper runs the CLI with the host shell)
 printf 'secret\n' > /tmp/opencode/tmc.token
-printf '#!/bin/sh\nexec sh %s/template/bin/tmc "$@"\n' "$PWD" > /tmp/opencode/tmc_wrap
+printf '#!/bin/sh\nexec sh %s/module/bin/tmc "$@"\n' "$PWD" > /tmp/opencode/tmc_wrap
 chmod +x /tmp/opencode/tmc_wrap
 printf 'list' | REQUEST_METHOD=POST QUERY_STRING='token=secret' \
   TMC_CONFIG=/tmp/opencode/tmc_test.conf TMC_UI_TOKEN_FILE=/tmp/opencode/tmc.token \
   TMC_CGI_ERR_FILE=/tmp/opencode/tmc.cgi.err TMC_BIN=/tmp/opencode/tmc_wrap \
-  sh template/webroot/cgi-bin/api
+  sh module/webroot/cgi-bin/api
 # expected JSON {"errno":0,...}; wrong token -> Status: 403 + invalid token
 ```
 
@@ -58,11 +62,32 @@ curl -k https://127.0.0.1:8443/   # expect: trustmycert-test-ok
 
 ```bash
 export ANDROID_HOME=$HOME/Android/Sdk
-python3 build.py zip   # -> release/TrustMyCert-1.0-*-debug.zip (all 5 ABIs)
+
+TMC_VERSION=1.1.0 python3 build.py zip
+# packages BOTH channels:
+# -> release/TrustMyCert-1.1.0-<hash>.zip
+#    product: only error logs compiled in (version=1.1.0)
+# -> release/TrustMyCert-1.1.0-debug-<hash>.zip
+#    debug: debug/info/warning/error logs compiled in (version=1.1.0-debug)
 ```
 
-Verified 2026-10-16: `release/TrustMyCert-1.0-1-cf5be86-debug.zip`, all ABIs
-linked (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`, `riscv64`).
+One release ships both channels; the debug zip carries `-debug` in its file
+name. The GitHub release workflow (`.github/workflows/release.yml`) is driven
+by a plain `vX.Y.Z` tag and publishes both zips in a single release.
+
+Verified 2026-11-14: both channels built locally with all ABIs linked
+(`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`, `riscv64`):
+
+- `release/TrustMyCert-1.1.0-674157f.zip` — product (`version=1.1.0`,
+  `versionCode=9999`); `strings` contains only the `[TrustMyCert]` error
+  lines, no info/warn diagnostics.
+- `release/TrustMyCert-1.1.0-debug-674157f.zip` — debug
+  (`version=1.1.0-debug`); `strings` contains the info/warn/error
+  diagnostics.
+
+Both libraries export `zygisk_module_entry` and `zygisk_companion_entry`
+(`nm -D`). Release publishing in GitHub Actions remains unverified until the
+workflow runs; see the status ledger at the end of this file.
 
 ## C. On-device test (requires rooted device + Zygisk)
 
@@ -158,7 +183,10 @@ lives above chain validation (AGENTS.md §3C).
 | Runtime target config (parser/matching/IPC framing) | implemented, NDK-built, host-tested |
 | Root companion config fetch | implemented, NDK-built, **unverified on device** |
 | WebUI (`webroot/`) | implemented, shell/JS syntax-checked, HTTP fallback host-tested, **unverified in a real root manager** |
-| `tmc` CLI | implemented, host-tested (add/remove/set/list/validate), **unverified on device** |
+| WebUI **Debug info** log panel | implemented, JS syntax-checked and `logs` CGI path host-tested, **unverified in a real root manager** |
+| `tmc` CLI | implemented, host-tested (add/remove/set/list/validate/logs), **unverified on device** |
+| Debug/product build channels (`DEBUG=0/1`, naming, `versionCode`) | implemented, both channels NDK-built, artifact/ZIP/`module.prop`/`strings` inspected; **workflow not yet run** |
+| Tag-driven GitHub release workflow | implemented, YAML validated locally, **unverified in GitHub Actions** |
 | Installer packaging (`customize.sh`, perms, config seed) | implemented, full-zip build, **unverified on device** |
 | Test lib + server + APK stub | implemented, host-verified (lib+server); APK assembly needs Android Studio + device |
 | On-device log confirmation | **not done** — no rooted device available |

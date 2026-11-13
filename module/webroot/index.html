@@ -105,10 +105,30 @@
 
     <section class="card">
       <div class="row">
-        <h2 class="grow">Diagnostics</h2>
-        <button id="refresh" class="ghost" type="button">Refresh</button>
+        <h2 class="grow">Debug info</h2>
+        <div class="actions">
+          <label class="check" title="Refresh the log tail automatically every 5 seconds">
+            <input id="auto-refresh" type="checkbox">
+            <span>Auto</span>
+          </label>
+          <button id="refresh" class="ghost" type="button">Refresh</button>
+        </div>
       </div>
-      <pre id="log" class="log">Loading…</pre>
+
+      <div class="debug-grid">
+        <div>
+          <h3>Config</h3>
+          <pre id="config-log" class="log">Loading…</pre>
+        </div>
+        <div>
+          <h3>Module log</h3>
+          <pre id="module-log" class="log">Loading…</pre>
+        </div>
+      </div>
+
+      <p class="hint">Debug builds emit info, warning and error entries; product builds
+        emit errors only. The log tail is read through <code>tmc logs</code> from the
+        <code>TrustMyCert</code> logcat tag.</p>
       <p class="hint">Config: <code id="path">/data/adb/trustmycert/config.conf</code></p>
       <p class="hint">Logs: <code>adb logcat -s TrustMyCert</code> &middot;
         <code>adb logcat | grep -F '[TrustMyCert]'</code></p>

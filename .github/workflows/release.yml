@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag, e.g. v1.1.0 (ships product + debug zips in one release)'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${{ github.ref_name }}"
+          else
+            tag="${{ inputs.version }}"
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag must match vMAJOR.MINOR.PATCH (both channels ship in one release): $tag"
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK and NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;29.0.14206865'
+
+      - name: Run host tests
+        run: sh test/run_host_tests.sh
+
+      - name: Build module (debug + product channels)
+        env:
+          TMC_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 -m py_compile build.py
+          # One invocation packages both channels: the debug zip carries
+          # "-debug" in its file name and module.prop version.
+          python3 build.py --save-debug zip
+          echo "Artifacts:"
+          ls -lh release symbols
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustmycert-${{ steps.meta.outputs.version }}
+          path: |
+            release/*.zip
+            symbols/*.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: TrustMyCert ${{ steps.meta.outputs.version }}
+          body: |
+            TrustMyCert ${{ steps.meta.outputs.version }}
+
+            One release, two build channels (same source, same feature set):
+
+            | File | Channel | Logs compiled in |
+            |---|---|---|
+            | `TrustMyCert-${{ steps.meta.outputs.version }}-<commit>.zip` | product (stable) | errors only |
+            | `TrustMyCert-${{ steps.meta.outputs.version }}-debug-<commit>.zip` | debug | debug, info, warning, error |
+
+            - The debug zip carries `-debug` in the file name and in `module.prop`
+              (`version=X.Y.Z-debug`, lower `versionCode`), so Magisk/KernelSU/APatch
+              always shows which channel is flashed.
+            - Product builds are silent except for real errors; use the debug zip
+              when you need the discovery/hook trace.
+            - Each zip ships a `.sha256` sidecar for every file inside it;
+              `*-symbols.zip` holds the unstripped libraries for debugging.
+
+            Install the module zip from Magisk, KernelSU or APatch. Add only authorized test apps in the module WebUI or with `bin/tmc add <package>`.
+
+            Authorized security testing only.
+          files: |
+            release/*.zip
+            symbols/*.zip
+          fail_on_unmatched_files: true

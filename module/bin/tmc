@@ -12,10 +12,12 @@
 #   tmc add <package>            add a target app
 #   tmc remove <package>         remove a target app
 #   tmc apps                     list installed third-party packages
+#   tmc logs [lines]             print recent TrustMyCert logcat lines (default 200)
 #   tmc path                     print the config path
 #   tmc validate                 validate the config file
 #
 # TMC_CONFIG overrides the config path (host tests only).
+# TMC_LOGCAT overrides the logcat binary (host tests only).
 
 set -u
 set -f  # config values are used in word-splitting loops; never glob
@@ -251,6 +253,20 @@ cmd_apps() {
     printf '%s\n' "$_out" | sed -n 's/^package://p' | sort -u
 }
 
+cmd_logs() {
+    _lines=${1:-200}
+    case "$_lines" in
+        "" | *[!0-9]*) die "usage: tmc logs [1-500]" ;;
+    esac
+    if [ "$_lines" -lt 1 ] || [ "$_lines" -gt 500 ]; then
+        die "logs line count must be between 1 and 500"
+    fi
+    _logcat=${TMC_LOGCAT:-logcat}
+    command -v "$_logcat" >/dev/null 2>&1 || die "logcat not available"
+    _out=$("$_logcat" -d -v brief -s TrustMyCert 2>&1) || die "logcat failed"
+    printf '%s\n' "$_out" | tail -n "$_lines"
+}
+
 cmd_validate() {
     [ -f "$CONF" ] || die "config not found: $CONF"
     _err=0
@@ -301,6 +317,7 @@ case "$_cmd" in
     add) cmd_add "$@" ;;
     remove) cmd_remove "$@" ;;
     apps) cmd_apps ;;
+    logs) cmd_logs "$@" ;;
     path) echo "$CONF" ;;
     validate) cmd_validate ;;
     -h | --help | help) usage ;;

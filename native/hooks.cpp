@@ -205,7 +205,7 @@ int InstallJniHooks(zygisk::Api *api, JNIEnv *env) {
             TMC_LOGI("Hook installation successful: java/lang/Runtime.nativeLoad/2 (load monitor)");
             ++hooked;
         } else {
-            TMC_LOGW("Hook installation failed: Runtime.nativeLoad not found (/2 nor /3)");
+            TMC_LOGE("Hook installation failed: Runtime.nativeLoad not found (/2 nor /3)");
         }
     }
     return hooked;

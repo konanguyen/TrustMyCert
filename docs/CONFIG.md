@@ -9,6 +9,22 @@ Two layers:
 
 Runtime configuration is documented in detail in `docs/WEBUI.md`.
 
+## Build channels
+
+`python3 build.py zip` packages both channels into one release:
+
+| Channel | Logging | Zip file | `module.prop` |
+|---|---|---|---|
+| product | `TMC_LOGE` only | `TrustMyCert-1.1.0-<commit>.zip` | `version=1.1.0`, `versionCode=<commits>999` |
+| debug | debug/info/warning/error | `TrustMyCert-1.1.0-debug-<commit>.zip` | `version=1.1.0-debug`, `versionCode=<commits>000` |
+
+For the single-ABI dev commands (`build`/`config`/`deploy`/`flash`) select the
+channel with `DEBUG=1/0` (or `-t debug` / `-t product`); `DEBUG` overrides
+`-t`. The debug suffix is part of `module.prop` and the artifact filename, so
+the channels are never ambiguous. Product binaries compile out the
+info/warning strings; even `verbose=1` cannot make a product build emit
+diagnostics.
+
 ## Build-time options
 
 | Flag | Default | Effect |

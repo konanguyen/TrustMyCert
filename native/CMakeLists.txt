@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(trustmycert)
 
+# Product builds compile only TMC_LOGE. Debug builds compile all log levels.
+if(NOT DEFINED TMC_DEBUG_BUILD)
+    set(TMC_DEBUG_BUILD 0)
+endif()
+
 macro(strip_and_move NAME)
     add_custom_command(TARGET ${NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory ${DEBUG_SYMBOLS_PATH}
@@ -16,5 +21,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(${MODULE_NAME} SHARED trustmycert.cpp discovery.cpp hooks.cpp runtime_config.cpp)
+target_compile_definitions(${MODULE_NAME} PRIVATE TMC_DEBUG_BUILD=${TMC_DEBUG_BUILD})
 target_link_libraries(${MODULE_NAME} PRIVATE log dl)
 strip_and_move(${MODULE_NAME})

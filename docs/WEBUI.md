@@ -86,7 +86,12 @@ Features:
   (`pm list packages -3`, third-party apps only);
 - subprocess matching and verbose toggles;
 - test-only bypass behind an explicit confirmation panel;
-- diagnostics panel showing CLI output.
+- **Debug info** panel with the effective config and a live tail of the
+  `TrustMyCert` logcat tag (read with `tmc logs 200`); auto-refresh is opt-in.
+
+Debug builds show debug/info/warning/error entries. Product builds compile out
+everything except errors, so the module log panel is intentionally quiet on a
+stable release. Use a debug build when you need the discovery/hook trace.
 
 ### Magisk (action button fallback)
 
@@ -125,6 +130,7 @@ $TMC set verbose 1
 $TMC set match_subprocesses 0
 $TMC set bypass 0
 $TMC apps                 # installed third-party packages
+$TMC logs 200             # recent TrustMyCert logcat lines (1-500)
 $TMC validate             # syntax check + target count
 $TMC path                 # config path
 ```

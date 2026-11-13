@@ -79,7 +79,7 @@ void CompanionHandler(int client) {
             if (data.size() + static_cast<std::size_t>(n) >
                 trustmycert::runtime_config::kMaxConfigBytes) {
                 data.resize(trustmycert::runtime_config::kMaxConfigBytes);
-                TMC_LOGW("Runtime config truncated at %zu bytes",
+                TMC_LOGE("Runtime config truncated at %zu bytes",
                          trustmycert::runtime_config::kMaxConfigBytes);
                 break;
             }
@@ -193,7 +193,7 @@ public:
         // fail-closed: no config means no instrumentation.
         int fd = api_->connectCompanion();
         if (fd < 0) {
-            TMC_LOGW("Hook installation failed: companion connection unavailable (fail-closed)");
+            TMC_LOGE("Hook installation failed: companion connection unavailable (fail-closed)");
         } else {
             std::string text;
             if (trustmycert::runtime_config::FetchFromCompanion(fd, &text)) {
@@ -210,7 +210,7 @@ public:
                         TMC_LOGI("Runtime config: target allowlisted: %s", t.c_str());
                 }
             } else {
-                TMC_LOGW("Hook installation failed: runtime config IPC error (fail-closed)");
+                TMC_LOGE("Hook installation failed: runtime config IPC error (fail-closed)");
             }
             ::close(fd);
         }

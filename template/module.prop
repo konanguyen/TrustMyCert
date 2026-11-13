@@ -1,7 +1,0 @@
-id=${moduleId}
-name=${moduleName}
-version=${versionName}
-versionCode=${versionCode}
-author=TrustMyCert
-description=Native SSL pinning research with WebUI target allowlist, discovery and diagnostics (authorized testing only)
-#updateJson=

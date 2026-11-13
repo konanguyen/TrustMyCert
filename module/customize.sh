@@ -25,6 +25,11 @@ fi
 
 VERSION=$(grep_prop version "${TMPDIR}/module.prop")
 ui_print "- Installing $SONAME $VERSION"
+if [ "$DEBUG" = "1" ]; then
+  ui_print "- Build channel: debug (info/warn/error logs enabled)"
+else
+  ui_print "- Build channel: product (error logs only)"
+fi
 
 # check architecture
 support=false

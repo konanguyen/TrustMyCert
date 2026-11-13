@@ -12,3 +12,5 @@ local.properties
 /output
 /release
 AGENTS.md
+__pycache__/
+/symbols

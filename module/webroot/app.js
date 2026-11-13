@@ -39,7 +39,9 @@ const ui = {
   formError: el('form-error'),
   targets: el('targets'),
   empty: el('empty'),
-  log: el('log'),
+  configLog: el('config-log'),
+  moduleLog: el('module-log'),
+  autoRefresh: el('auto-refresh'),
   refresh: el('refresh'),
   path: el('path'),
 };
@@ -52,6 +54,15 @@ let state = {
   targets: [],
 };
 let busy = false;
+let autoTimer = null;
+
+function setAutoRefresh(enabled) {
+  if (autoTimer !== null) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+  }
+  if (enabled) autoTimer = setInterval(loadModuleLogs, 5000);
+}
 
 function setBanner(message, kind) {
   if (!message) {
@@ -64,9 +75,13 @@ function setBanner(message, kind) {
   ui.banner.textContent = message;
 }
 
-function appendLog(text) {
-  if (!text) return;
-  ui.log.textContent = (ui.log.textContent === 'Loading…' ? '' : ui.log.textContent + '\n') + text;
+async function loadModuleLogs() {
+  try {
+    const text = await run(TMC + ' logs 200');
+    ui.moduleLog.textContent = text.trim() || 'No TrustMyCert log entries yet.';
+  } catch (error) {
+    ui.moduleLog.textContent = 'Cannot read module logs: ' + error.message;
+  }
 }
 
 function ksuExec(command) {
@@ -177,14 +192,16 @@ async function refresh() {
     const text = await run(TMC + ' list');
     state = parseConfig(text);
     render();
-    ui.log.textContent = '$ tmc list\n' + text.trim();
+    ui.configLog.textContent = '$ tmc list\n' + text.trim();
     setBanner('');
   } catch (error) {
     setBanner('Cannot read config: ' + error.message, 'error');
+    ui.configLog.textContent = 'Cannot read config: ' + error.message;
   } finally {
     busy = false;
     ui.refresh.disabled = false;
   }
+  await loadModuleLogs();
 }
 
 async function setFlag(key, value) {
@@ -195,7 +212,6 @@ async function setFlag(key, value) {
     state[key] = value;
     if (key === 'bypass') ui.bypass.checked = value;
     setBanner('');
-    appendLog('set ' + key + '=' + (value ? '1' : '0'));
   } catch (error) {
     setBanner('Failed to update ' + key + ': ' + error.message, 'error');
     const control = el(key);
@@ -203,6 +219,7 @@ async function setFlag(key, value) {
   } finally {
     busy = false;
   }
+  await refresh();
 }
 
 async function addTarget(pkg) {
@@ -222,7 +239,6 @@ async function addTarget(pkg) {
     await run(TMC + ' add ' + pkg);
     ui.pkg.value = '';
     showFormError('');
-    appendLog('added target: ' + pkg);
     added = true;
   } catch (error) {
     showFormError(error.message);
@@ -239,7 +255,6 @@ async function removeTarget(pkg) {
   busy = true;
   try {
     await run(TMC + ' remove ' + pkg);
-    appendLog('removed target: ' + pkg);
     removed = true;
   } catch (error) {
     setBanner('Failed to remove ' + pkg + ': ' + error.message, 'error');
@@ -299,6 +314,7 @@ function wireEvents() {
   });
 
   ui.refresh.addEventListener('click', refresh);
+  ui.autoRefresh.addEventListener('change', () => setAutoRefresh(ui.autoRefresh.checked));
 }
 
 async function boot() {
