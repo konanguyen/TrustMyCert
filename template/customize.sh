@@ -57,7 +57,15 @@ ui_print "- Extracting module files"
 extract "$ZIPFILE" 'module.prop'     "$MODPATH"
 extract "$ZIPFILE" 'post-fs-data.sh' "$MODPATH"
 extract "$ZIPFILE" 'service.sh'      "$MODPATH"
+extract "$ZIPFILE" 'action.sh'       "$MODPATH"
+extract "$ZIPFILE" 'uninstall.sh'    "$MODPATH"
 mv "$TMPDIR/sepolicy.rule" "$MODPATH"
+
+ui_print "- Extracting WebUI and CLI"
+unzip -o "$ZIPFILE" 'webroot/*' -d "$MODPATH" >&2
+unzip -o "$ZIPFILE" 'bin/*' -d "$MODPATH" >&2
+# Runtime does not need the per-file hashes; do not serve them from webroot.
+rm -f "$MODPATH"/webroot/*.sha256 "$MODPATH"/webroot/cgi-bin/*.sha256 "$MODPATH"/bin/*.sha256
 
 HAS32BIT=false && ([ $(getprop ro.product.cpu.abilist32) ] || [ $(getprop ro.system.product.cpu.abilist32) ]) && HAS32BIT=true
 
@@ -84,5 +92,31 @@ else
   mv "$MODPATH/zygisk/lib$SONAME.so" "$MODPATH/zygisk/arm64-v8a.so"
 fi
 
+ui_print "- Initializing runtime config"
+TMC_DATA_DIR=/data/adb/trustmycert
+mkdir -p "$TMC_DATA_DIR"
+if [ ! -f "$TMC_DATA_DIR/config.conf" ]; then
+  cat >"$TMC_DATA_DIR/config.conf" <<'EOF'
+# TrustMyCert runtime config (managed by tmc / WebUI).
+# Only listed target apps are instrumented. Missing config = no targets.
+# Add one target= line per authorized test app, then restart the app.
+# Changes are read by the root companion when an app process starts.
+enabled=1
+bypass=0
+verbose=0
+match_subprocesses=0
+# target=com.example.app
+EOF
+  ui_print "- Created $TMC_DATA_DIR/config.conf (no targets yet)"
+else
+  ui_print "- Preserved existing $TMC_DATA_DIR/config.conf"
+fi
+chmod 0755 "$TMC_DATA_DIR"
+chmod 0644 "$TMC_DATA_DIR/config.conf"
+
 ui_print "- Setting permissions"
 set_perm_recursive "$MODPATH" 0 0 0755 0644
+set_perm "$MODPATH/action.sh" 0 0 0755
+set_perm "$MODPATH/uninstall.sh" 0 0 0755
+set_perm "$MODPATH/bin/tmc" 0 0 0755
+set_perm "$MODPATH/webroot/cgi-bin/api" 0 0 0755

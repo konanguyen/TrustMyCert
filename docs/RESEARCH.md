@@ -56,7 +56,9 @@ References: [BoringSSL ssl.h](https://github.com/google/boringssl/blob/master/in
 - **Hook surface (native side):** Conscrypt's native crypto plus the shared
   native verify boundary (`X509_verify_cert`). Java policy above it belongs to
   the sibling Java-layer module.
-- **No companion needed:** Conscrypt runs in-app; observing it needs no superuser IPC, which is why TrustMyCert registers no root companion.
+- **No superuser IPC needed for Conscrypt itself:** it runs in-app; observing it
+  needs nothing from the companion. The companion is used only to serve the
+  root-owned target allowlist (see §5).
 
 References: [Conscrypt](https://github.com/google/conscrypt) (`platform/src/main/native`).
 
@@ -114,7 +116,8 @@ References: [GnuTLS](https://www.gnutls.org/manual/).
 | Inline hooking / PLT/GOT by hand | Rejected: Zygisk already provides PLT hooking with correct cache handling; hand-rolled remapping adds crash risk for no MVP benefit |
 | Dobby / ShadowHook | Evaluated, **not vendored**: extra license/build/ABI surface; incompatible-without-verification on this template's NDK matrix. Field validation: FlutterTap (C++ Zygisk, Dobby `DobbyHook`/`DobbyInstrument` vendored, Capstone-assisted) uses Dobby precisely because its target (`libflutter.so`) loads *after* the Zygisk PLT commit window — confirming both the commit-window constraint above and that inline hooking is the correct tool for late-loaded/stripped targets. Revisit for TrustMyCert only with a per-ABI compatibility table + a late-load use case that PLT hooks cannot cover |
 | Late-loaded libraries | Reported (discovery rescan on `nativeLoad`), **not** PLT-hooked: commit window is closed post-specialization (API limitation, logged as diagnostic) |
-| Behavior-changing bypass | Implemented **only** behind `config::kEnableBypass=false` default; enabling weakens TLS process-wide — test-only, see `docs/CONFIG.md` |
+| Behavior-changing bypass | Implemented **only** behind `kEnableBypass=false` + `kAllowRuntimeBypass=false` + runtime `bypass=1`; enabling weakens TLS process-wide — test-only, see `docs/CONFIG.md` |
+| Runtime target selection | Used: runtime allowlist in `/data/adb/trustmycert/config.conf` served by the root companion, fail-closed. Prevents hooking unrelated apps/games (anti-cheat) and keeps the default posture deny-all |
 
 Per-hook safety contract (`native/hooks.cpp`): exact-signature wrappers only;
 null-orig never called; hot-path logging capped at `kMaxHotPathLogs`;
@@ -123,11 +126,25 @@ slow paths, atomics on hot paths.
 
 ## 5. Companion / IPC
 
-None. The template demoed a root companion (`example.cpp`), but TrustMyCert
-performs no superuser operation (config is compiled in, logs go through
-logcat), so no companion is registered. If a future feature needs root
-(e.g. reading another app's config), add `REGISTER_ZYGISK_COMPANION` then —
-with a threat model, not before.
+One narrow companion is registered, for target selection only:
+
+- App processes cannot read `/data/adb` (SELinux/UID), so a compile-time
+  allowlist cannot be edited without rebuilding.
+- During `preAppSpecialize`, the module connects to the companion and requests
+  opcode `C`. The companion opens the fixed path
+  `/data/adb/trustmycert/config.conf`, caps the read at 64 KiB, and replies
+  with a 4-byte little-endian length plus bytes.
+- The client sends **no path**; the companion exposes no write operation and no
+  other file. A malformed/unknown opcode closes the connection.
+- Missing config yields a zero-length reply, which parses to the fail-closed
+  default (no targets, disabled).
+- `connectCompanion` only works in `pre[XXX]Specialize`; failure is logged and
+  the process is skipped.
+
+This is deliberately smaller than the template's demo companion: no arbitrary
+root file access, no writes, no command execution. The WebUI writes the config
+through its own root shell (`ksu.exec`/Magisk action), not through this socket.
+See `docs/WEBUI.md` for the protocol and threat model.
 
 ## 6. Symbol reference (what TrustMyCert probes)
 

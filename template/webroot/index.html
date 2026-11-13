@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>TrustMyCert</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div>
+        <h1>TrustMyCert</h1>
+        <p class="sub">Native TLS pinning research &middot; target allowlist</p>
+      </div>
+      <span id="bridge" class="pill">connecting</span>
+    </header>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <section class="card">
+      <div class="row">
+        <div class="grow">
+          <h2>Instrumentation</h2>
+          <p class="hint">Master switch. When off, no process is instrumented and the
+            module library is unloaded from every app.</p>
+        </div>
+        <label class="switch" title="Enable instrumentation">
+          <input id="enabled" type="checkbox">
+          <span></span>
+        </label>
+      </div>
+
+      <div class="row sub-row">
+        <div class="grow">
+          <h3>Match subprocesses</h3>
+          <p class="hint">Also instrument <code>pkg:suffix</code> processes. Keep off
+            for games and anti-cheat protected apps.</p>
+        </div>
+        <label class="switch" title="Match subprocesses">
+          <input id="match_subprocesses" type="checkbox">
+          <span></span>
+        </label>
+      </div>
+
+      <div class="row sub-row">
+        <div class="grow">
+          <h3>Verbose diagnostics</h3>
+          <p class="hint">Log every loaded library and resolved symbol. Useful while
+            triaging; noisy in normal use.</p>
+        </div>
+        <label class="switch" title="Verbose diagnostics">
+          <input id="verbose" type="checkbox">
+          <span></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card danger">
+      <div class="row">
+        <div class="grow">
+          <h2>Test-only verification bypass</h2>
+          <p class="hint">Overrides failed native verification only (genuine successes
+            are preserved). Requires a build with <code>kEnableBypass=1</code> and
+            <code>kAllowRuntimeBypass=1</code>; release builds ignore this setting.
+            <strong>Never use with real accounts or production traffic.</strong></p>
+        </div>
+        <label class="switch danger-switch" title="Test-only bypass">
+          <input id="bypass" type="checkbox">
+          <span></span>
+        </label>
+      </div>
+      <div id="bypass-confirm" class="confirm" hidden>
+        <p>Enabling the bypass weakens TLS validation for every listed app. Continue
+          only with test certificates and a controlled test server.</p>
+        <div class="actions">
+          <button id="bypass-yes" class="danger-btn" type="button">I understand, enable</button>
+          <button id="bypass-no" class="ghost" type="button">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <h2 class="grow">Target apps</h2>
+        <span id="count" class="pill">0</span>
+      </div>
+      <p class="hint">Only listed packages are instrumented. Everything else,
+        including <code>system_server</code>, is skipped and unloaded. Changes apply
+        the next time the target app starts.</p>
+
+      <form id="add-form" class="add-row" autocomplete="off">
+        <input id="pkg" list="installed" placeholder="com.example.app"
+               spellcheck="false" autocapitalize="none" inputmode="text"
+               aria-label="Package name">
+        <datalist id="installed"></datalist>
+        <button id="add-btn" type="submit">Add</button>
+      </form>
+      <p id="form-error" class="error" hidden></p>
+
+      <ul id="targets" class="target-list"></ul>
+      <p id="empty" class="hint empty" hidden>No targets yet. Nothing is hooked.</p>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <h2 class="grow">Diagnostics</h2>
+        <button id="refresh" class="ghost" type="button">Refresh</button>
+      </div>
+      <pre id="log" class="log">Loading…</pre>
+      <p class="hint">Config: <code id="path">/data/adb/trustmycert/config.conf</code></p>
+      <p class="hint">Logs: <code>adb logcat -s TrustMyCert</code> &middot;
+        <code>adb logcat | grep -F '[TrustMyCert]'</code></p>
+    </section>
+
+    <footer class="foot">
+      Authorized security testing only. No keys, tokens or payloads are logged or
+      transmitted by this UI.
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

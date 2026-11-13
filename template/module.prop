@@ -3,5 +3,5 @@ name=${moduleName}
 version=${versionName}
 versionCode=${versionCode}
 author=TrustMyCert
-description=Zygisk native SSL pinning research and testing module (authorized testing only)
+description=Native SSL pinning research with WebUI target allowlist, discovery and diagnostics (authorized testing only)
 #updateJson=

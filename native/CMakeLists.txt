@@ -15,6 +15,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_FLAGS}")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(${MODULE_NAME} SHARED trustmycert.cpp discovery.cpp hooks.cpp)
+add_library(${MODULE_NAME} SHARED trustmycert.cpp discovery.cpp hooks.cpp runtime_config.cpp)
 target_link_libraries(${MODULE_NAME} PRIVATE log dl)
 strip_and_move(${MODULE_NAME})

@@ -2,7 +2,8 @@
 
 // Carefully scoped runtime instrumentation (AGENTS.md section 5).
 //
-// What is implemented (observe-only unless config::kEnableBypass):
+// What is implemented (observe-only unless the runtime config enables the
+// TEST-ONLY bypass and the build also opts in):
 //   JNI  - java/lang/Runtime.nativeLoad, two known signatures (load monitor).
 //          Re-runs discovery reporting when app code loads a new library.
 //   PLT  - SSL_get_verify_result / X509_verify_cert / SSL_CTX_set_verify.

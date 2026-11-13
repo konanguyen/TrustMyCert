@@ -1,0 +1,308 @@
+#!/system/bin/sh
+# TrustMyCert runtime config CLI.
+#
+# Used by the KernelSU/APatch WebUI (via ksu.exec) and by the Magisk
+# action.sh HTTP fallback. Safe for root use only; the config directory is
+# not readable by apps.
+#
+# Commands:
+#   tmc list                     print effective config (key=value lines)
+#   tmc get <key>                print one value
+#   tmc set <key> <0|1>          set enabled/bypass/verbose/match_subprocesses
+#   tmc add <package>            add a target app
+#   tmc remove <package>         remove a target app
+#   tmc apps                     list installed third-party packages
+#   tmc path                     print the config path
+#   tmc validate                 validate the config file
+#
+# TMC_CONFIG overrides the config path (host tests only).
+
+set -u
+set -f  # config values are used in word-splitting loops; never glob
+
+CONF=${TMC_CONFIG:-/data/adb/trustmycert/config.conf}
+MAX_TARGETS=64
+
+die() {
+    printf '[TrustMyCert] tmc: %s\n' "$*" >&2
+    exit 1
+}
+
+usage() {
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' >&2
+    exit 1
+}
+
+# Last assignment wins, matching native/runtime_config.cpp.
+read_key() {
+    _key=$1
+    _default=$2
+    if [ ! -f "$CONF" ]; then
+        printf '%s\n' "$_default"
+        return 0
+    fi
+    awk -v k="$_key" -v d="$_default" '
+        /^[[:space:]]*#/ { next }
+        {
+            line=$0
+            p=index(line, "=")
+            if (p == 0) next
+            key=substr(line, 1, p - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+            if (key != k) next
+            val=substr(line, p + 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
+            h=index(val, "#")
+            if (h > 1 && substr(val, h - 1, 1) ~ /[[:space:]]/) {
+                val=substr(val, 1, h - 1)
+                gsub(/[[:space:]]+$/, "", val)
+            }
+            got=val
+        }
+        END { if (got == "") print d; else print got }
+    ' "$CONF"
+}
+
+read_targets() {
+    [ -f "$CONF" ] || return 0
+    awk '
+        /^[[:space:]]*#/ { next }
+        {
+            line=$0
+            p=index(line, "=")
+            if (p == 0) next
+            key=substr(line, 1, p - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+            if (key != "target") next
+            val=substr(line, p + 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
+            h=index(val, "#")
+            if (h > 1 && substr(val, h - 1, 1) ~ /[[:space:]]/) {
+                val=substr(val, 1, h - 1)
+                gsub(/[[:space:]]+$/, "", val)
+            }
+            # Validate here so a malformed manual edit can never inject extra
+            # words into the rewrite loop.
+            if (val ~ /^[A-Za-z0-9_.]+$/ && val != "system_server" && length(val) <= 255)
+                print val
+        }
+    ' "$CONF"
+}
+
+count_targets() {
+    _n=0
+    for _x in $TARGETS; do
+        _n=$((_n + 1))
+    done
+    printf '%s\n' "$_n"
+}
+
+valid_target() {
+    case "$1" in
+        "" | *[!A-Za-z0-9_.]*) return 1 ;;
+        system_server) return 1 ;;
+    esac
+    [ "${#1}" -le 255 ]
+}
+
+# Normalize booleans to 0/1. Echoes the normalized value.
+normalize_bool() {
+    case "$1" in
+        1 | true | yes | on) printf '1\n' ;;
+        0 | false | no | off) printf '0\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+write_config() {
+    _dir=$(dirname "$CONF")
+    [ -d "$_dir" ] || mkdir -p "$_dir" || die "cannot create $_dir"
+    _tmp="${CONF}.tmp.$$"
+    {
+        echo "# TrustMyCert runtime config (managed by tmc / WebUI)."
+        echo "# Only listed target apps are instrumented. Missing config = no targets."
+        echo "# Changes apply when the target app next starts."
+        echo "enabled=$ENABLED"
+        echo "bypass=$BYPASS"
+        echo "verbose=$VERBOSE"
+        echo "match_subprocesses=$MATCH_SUBPROCESSES"
+        for _t in $TARGETS; do
+            echo "target=$_t"
+        done
+    } >"$_tmp" || die "cannot write $_tmp"
+    chmod 0644 "$_tmp" 2>/dev/null
+    mv "$_tmp" "$CONF" || die "cannot replace $CONF"
+}
+
+load_config() {
+    ENABLED=$(read_key enabled 0)
+    BYPASS=$(read_key bypass 0)
+    VERBOSE=$(read_key verbose 0)
+    MATCH_SUBPROCESSES=$(read_key match_subprocesses 0)
+    case "$ENABLED" in 1 | true | yes | on) ENABLED=1 ;; *) ENABLED=0 ;; esac
+    case "$BYPASS" in 1 | true | yes | on) BYPASS=1 ;; *) BYPASS=0 ;; esac
+    case "$VERBOSE" in 1 | true | yes | on) VERBOSE=1 ;; *) VERBOSE=0 ;; esac
+    case "$MATCH_SUBPROCESSES" in 1 | true | yes | on) MATCH_SUBPROCESSES=1 ;; *) MATCH_SUBPROCESSES=0 ;; esac
+    TARGETS=$(read_targets | tr '\n' ' ')
+}
+
+cmd_list() {
+    load_config
+    echo "enabled=$ENABLED"
+    echo "bypass=$BYPASS"
+    echo "verbose=$VERBOSE"
+    echo "match_subprocesses=$MATCH_SUBPROCESSES"
+    for t in $TARGETS; do
+        echo "target=$t"
+    done
+}
+
+cmd_get() {
+    [ $# -eq 1 ] || die "usage: tmc get <key>"
+    case "$1" in
+        enabled | bypass | verbose | match_subprocesses)
+            read_key "$1" 0
+            ;;
+        targets)
+            load_config
+            count_targets
+            ;;
+        path)
+            echo "$CONF"
+            ;;
+        *)
+            die "unknown key: $1"
+            ;;
+    esac
+}
+
+cmd_set() {
+    [ $# -eq 2 ] || die "usage: tmc set <key> <0|1>"
+    _value=$(normalize_bool "$2") || die "value must be 0 or 1"
+    case "$1" in
+        enabled | bypass | verbose | match_subprocesses) ;;
+        *) die "unknown key: $1 (expected enabled, bypass, verbose or match_subprocesses)" ;;
+    esac
+    load_config
+    case "$1" in
+        enabled) ENABLED=$_value ;;
+        bypass)
+            BYPASS=$_value
+            if [ "$_value" = "1" ]; then
+                printf '[TrustMyCert] tmc: warning: bypass is TEST-ONLY and also requires a build with kEnableBypass=1 and kAllowRuntimeBypass=1\n' >&2
+            fi
+            ;;
+        verbose) VERBOSE=$_value ;;
+        match_subprocesses) MATCH_SUBPROCESSES=$_value ;;
+    esac
+    write_config
+    printf '%s=%s\n' "$1" "$_value"
+}
+
+cmd_add() {
+    [ $# -eq 1 ] || die "usage: tmc add <package>"
+    valid_target "$1" || die "invalid package name: $1"
+    load_config
+    for t in $TARGETS; do
+        if [ "$t" = "$1" ]; then
+            echo "already present: $1"
+            return 0
+        fi
+    done
+    if [ "$(count_targets)" -ge "$MAX_TARGETS" ]; then
+        die "target limit reached ($MAX_TARGETS)"
+    fi
+    # Adding a target is an explicit authorization: enable the module too.
+    ENABLED=1
+    TARGETS="$TARGETS $1"
+    write_config
+    echo "added: $1"
+}
+
+cmd_remove() {
+    [ $# -eq 1 ] || die "usage: tmc remove <package>"
+    load_config
+    _new=""
+    _found=0
+    for t in $TARGETS; do
+        if [ "$t" = "$1" ]; then
+            _found=1
+        else
+            _new="$_new $t"
+        fi
+    done
+    if [ "$_found" -eq 0 ]; then
+        echo "not present: $1"
+        return 0
+    fi
+    TARGETS=$_new
+    write_config
+    echo "removed: $1"
+}
+
+cmd_apps() {
+    _out=""
+    if command -v pm >/dev/null 2>&1; then
+        _out=$(pm list packages -3 2>/dev/null) || _out=""
+    fi
+    if [ -z "$_out" ] && command -v cmd >/dev/null 2>&1; then
+        _out=$(cmd package list packages -3 2>/dev/null) || _out=""
+    fi
+    printf '%s\n' "$_out" | sed -n 's/^package://p' | sort -u
+}
+
+cmd_validate() {
+    [ -f "$CONF" ] || die "config not found: $CONF"
+    _err=0
+    _n=0
+    while IFS= read -r line; do
+        case "$line" in
+            "" | \#*) continue ;;
+            target=*)
+                _v=${line#target=}
+                _v=$(printf '%s' "$_v" | sed -e 's/[[:space:]]#.*$//' \
+                    -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+                _n=$((_n + 1))
+                valid_target "$_v" || {
+                    echo "invalid target: $_v" >&2
+                    _err=1
+                }
+                ;;
+            enabled=* | bypass=* | verbose=* | match_subprocesses=*)
+                _v=${line#*=}
+                _v=$(printf '%s' "$_v" | sed -e 's/[[:space:]]#.*$//' \
+                    -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+                normalize_bool "$_v" >/dev/null || {
+                    echo "invalid boolean: $line" >&2
+                    _err=1
+                }
+                ;;
+            *)
+                echo "unknown line: $line" >&2
+                _err=1
+                ;;
+        esac
+    done <"$CONF"
+    [ "$_n" -le "$MAX_TARGETS" ] || {
+        echo "too many targets: $_n (max $MAX_TARGETS)" >&2
+        _err=1
+    }
+    [ "$_err" -eq 0 ] && echo "ok: $CONF ($_n targets)"
+    return "$_err"
+}
+
+[ $# -ge 1 ] || usage
+_cmd=$1
+shift
+case "$_cmd" in
+    list) cmd_list ;;
+    get) cmd_get "$@" ;;
+    set) cmd_set "$@" ;;
+    add) cmd_add "$@" ;;
+    remove) cmd_remove "$@" ;;
+    apps) cmd_apps ;;
+    path) echo "$CONF" ;;
+    validate) cmd_validate ;;
+    -h | --help | help) usage ;;
+    *) die "unknown command: $_cmd" ;;
+esac

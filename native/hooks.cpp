@@ -15,6 +15,7 @@
 #include "config.h"
 #include "discovery.h"
 #include "log.h"
+#include "runtime_config.h"
 
 namespace trustmycert {
 namespace hooks {
@@ -110,7 +111,7 @@ long Hooked_SSL_get_verify_result(const void *ssl) {
         std::lock_guard<std::mutex> l(g_state_mu);
         orig = PickOrig(g_orig_get_verify_result, "SSL_get_verify_result", warned);
     }
-    if (config::kEnableBypass) {
+    if (runtime_config::BypassActive()) {
         // TEST-ONLY, failure-only override (field technique: flip failures,
         // preserve successes — minimizes behavioral delta vs blanket allow).
         long real = orig ? orig(ssl) : -1L;
@@ -137,7 +138,7 @@ int Hooked_X509_verify_cert(void *ctx) {
         std::lock_guard<std::mutex> l(g_state_mu);
         orig = PickOrig(g_orig_verify_cert, "X509_verify_cert", warned);
     }
-    if (config::kEnableBypass) {
+    if (runtime_config::BypassActive()) {
         // TEST-ONLY, failure-only override (see above).
         int real = orig ? orig(ctx) : 0;
         if (real != 1) {

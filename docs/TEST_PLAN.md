@@ -2,6 +2,14 @@
 
 ## A. Host unit tests (no device needed)
 
+One command runs everything below (native tests, shell/JS syntax, CLI, CGI):
+
+```bash
+sh test/run_host_tests.sh   # expected: ALL HOST TESTS PASSED
+```
+
+Individual commands:
+
 ```bash
 # test library: SHA-256 vectors + chain/pin taxonomy
 g++ -std=c++17 -Wall -Wextra test/native_testlib/test_main.cpp \
@@ -13,6 +21,31 @@ g++ -std=c++17 -Wall -Wextra -Itest/host_stubs -Inative \
   test/discovery_host_test.cpp native/discovery.cpp -o /tmp/opencode/tmc_disc \
   && /tmp/opencode/tmc_disc
 # expected: DISCOVERY HOST TESTS PASSED
+
+# runtime config parser, process matching, companion IPC framing
+g++ -std=c++17 -Wall -Wextra -Itest/host_stubs -Inative \
+  test/runtime_config_host_test.cpp native/runtime_config.cpp \
+  -o /tmp/opencode/tmc_runtime && /tmp/opencode/tmc_runtime
+# expected: RUNTIME CONFIG HOST TESTS PASSED
+
+# CLI (TMC_CONFIG points at a scratch file)
+TMC_CONFIG=/tmp/opencode/tmc_test.conf sh template/bin/tmc add com.example.app
+TMC_CONFIG=/tmp/opencode/tmc_test.conf sh template/bin/tmc list
+TMC_CONFIG=/tmp/opencode/tmc_test.conf sh template/bin/tmc validate
+# expected: added / enabled=1 + target=com.example.app / ok: ... (1 targets)
+
+# CGI whitelist (host sh; wrapper runs the CLI with the host shell)
+printf 'secret\n' > /tmp/opencode/tmc.token
+printf '#!/bin/sh\nexec sh %s/template/bin/tmc "$@"\n' "$PWD" > /tmp/opencode/tmc_wrap
+chmod +x /tmp/opencode/tmc_wrap
+printf 'list' | REQUEST_METHOD=POST QUERY_STRING='token=secret' \
+  TMC_CONFIG=/tmp/opencode/tmc_test.conf TMC_UI_TOKEN_FILE=/tmp/opencode/tmc.token \
+  TMC_CGI_ERR_FILE=/tmp/opencode/tmc.cgi.err TMC_BIN=/tmp/opencode/tmc_wrap \
+  sh template/webroot/cgi-bin/api
+# expected JSON {"errno":0,...}; wrong token -> Status: 403 + invalid token
+```
+
+The controlled TLS server:
 
 ```bash
 # controlled TLS server (needs test/gen_certs.sh first)
@@ -35,13 +68,33 @@ linked (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`, `riscv64`).
 
 1. Flash: `python3 build.py flash --reboot` (or install the zip from the
    Magisk/KernelSU app). Enable the module + Zygisk, reboot.
-2. Build the stub APK: open `test/app_stub` in Android Studio (package
+2. Add the stub package to the runtime allowlist (WebUI or CLI):
+
+   ```bash
+   adb shell su -c '/data/adb/modules/trustmycert/bin/tmc add com.example.trustmycert.test'
+   adb shell su -c '/data/adb/modules/trustmycert/bin/tmc list'
+   ```
+
+3. Build the stub APK: open `test/app_stub` in Android Studio (package
    `com.example.trustmycert.test`), build its `libtestverify.so` from
    `test/native_testlib` via the stub's CMake, install with `adb install`.
    The stub has four buttons: Chain-OK, Chain-bad-CA, CertPin-match,
    CertPin-mismatch, SPKI-match, SPKI-mismatch (each calls the JNI bridge).
-3. `adb logcat -c`, launch the test app, tap each case.
-4. Filter: `adb logcat -s TrustMyCert`.
+4. `adb logcat -c`, force-stop and launch the test app, tap each case.
+5. Filter: `adb logcat -s TrustMyCert`.
+
+### Target-selection tests (must pass before hook tests)
+
+| Test | Action | Expected |
+|---|---|---|
+| Default deny | Do not add any target; launch the stub | `enabled=1 targets=0`; no `Target process selected` for the stub |
+| Allowlist | `tmc add <pkg>`; force-stop + relaunch | `Target process selected: <pkg>` |
+| Non-target | Launch any other app | No instrumentation; skipped line at debug priority |
+| `system_server` | Reboot | `Target process skipped: system_server (never instrumented)` |
+| Disable | `tmc set enabled 0`; force-stop + relaunch target | `Target process skipped: ... (module disabled by runtime config)` |
+| Subprocess off | Target has `:remote` process; leave `match_subprocesses=0` | `:remote` is not instrumented |
+| Subprocess on | `tmc set match_subprocesses 1`; relaunch | `:remote` is instrumented |
+| Config persistence | Reboot | Target list and switches preserved |
 
 ### Expected log output
 
@@ -84,9 +137,13 @@ lives above chain validation (AGENTS.md §3C).
 
 - `no known TLS symbols resolved` on the test app → methodology broken,
   investigate before any bypass test.
-- Bypass test (explicit opt-in): set `kEnableBypass=true`, rebuild, reflash,
-  repeat bad-CA case → handshake now succeeds; log shows
-  `TEST-ONLY bypass is ENABLED` + `BYPASS active` lines. **Revert afterwards.**
+- Bypass test (explicit opt-in): set BOTH `kEnableBypass=true` and
+  `kAllowRuntimeBypass=true`, rebuild, reflash, then
+  `tmc set bypass 1`; repeat the bad-CA case → handshake now succeeds; log
+  shows `TEST-ONLY bypass compiled in` + `BYPASS active` lines. **Set
+  `bypass=0` and rebuild with both flags false afterwards.**
+- With the default build, `tmc set bypass 1` must leave behavior unchanged and
+  log `Runtime bypass requested but build disallows it`.
 
 ## D. Status ledger
 
@@ -98,5 +155,10 @@ lives above chain validation (AGENTS.md §3C).
 | Test-only bypass | implemented (failure-only override), default OFF, **unverified on device** |
 | Flutter stripped-carrier reporting | implemented, NDK-built, host-tested (basename rules) |
 | Proxygen 3rd mangling variant + Liger | implemented, NDK-built, host-tested |
+| Runtime target config (parser/matching/IPC framing) | implemented, NDK-built, host-tested |
+| Root companion config fetch | implemented, NDK-built, **unverified on device** |
+| WebUI (`webroot/`) | implemented, shell/JS syntax-checked, HTTP fallback host-tested, **unverified in a real root manager** |
+| `tmc` CLI | implemented, host-tested (add/remove/set/list/validate), **unverified on device** |
+| Installer packaging (`customize.sh`, perms, config seed) | implemented, full-zip build, **unverified on device** |
 | Test lib + server + APK stub | implemented, host-verified (lib+server); APK assembly needs Android Studio + device |
 | On-device log confirmation | **not done** — no rooted device available |
