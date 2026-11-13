@@ -11,6 +11,5 @@ local.properties
 /my_build
 /output
 /release
-AGENTS.md
 __pycache__/
 /symbols
