@@ -174,9 +174,9 @@ validation failures can be told apart from explicit pin mismatches. Follow
 - ✅ Runtime target allowlist + WebUI/CLI implemented; installer packaging is
   covered by a full-zip build.
 - ✅ Debug/product build channels (one release ships both zips) and
-  tag-driven GitHub release workflow implemented; host tests cover the
-  CLI/CGI log path. Real release execution and root-manager WebUI behavior
-  require GitHub/device verification.
+  tag-driven GitHub release workflow implemented; host tests pass and the
+  `v1.1.0` workflow run published both module zips plus symbols. Root-manager
+  WebUI and on-device behavior still require device verification.
 - ⏳ On-device hook/bypass/WebUI verification pending a rooted test device.
 - Java-layer pinning and the Chromium/Cronet verifier are out of scope
   (sibling modules own the Java layer). See `docs/CONFIG.md` and

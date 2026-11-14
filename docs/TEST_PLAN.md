@@ -86,8 +86,24 @@ Verified 2026-11-14: both channels built locally with all ABIs linked
   diagnostics.
 
 Both libraries export `zygisk_module_entry` and `zygisk_companion_entry`
-(`nm -D`). Release publishing in GitHub Actions remains unverified until the
-workflow runs; see the status ledger at the end of this file.
+(`nm -D`).
+
+Published release verification (2026-11-14): GitHub Actions run
+[43516215096](https://github.com/konanguyen/TrustMyCert/actions/runs/43516215096)
+succeeded for tag `v1.1.0` (commit `aa9c3aa`) and published a normal release at
+<https://github.com/konanguyen/TrustMyCert/releases/tag/v1.1.0> with both
+module zips plus both symbols zips. The two module zips were downloaded and
+inspected:
+
+- `TrustMyCert-1.1.0-aa9c3aa.zip` — `version=1.1.0`, `versionCode=10999`,
+  five ABIs, both Zygisk exports, no info/warn strings.
+- `TrustMyCert-1.1.0-debug-aa9c3aa.zip` — `version=1.1.0-debug`,
+  `versionCode=10000`, five ABIs, both Zygisk exports, info/warn strings
+  present.
+
+The local artifacts above were built from commit `674157f`; the release
+assets were built by CI from the tagged commit `aa9c3aa`. See the status
+ledger below.
 
 ## C. On-device test (requires rooted device + Zygisk)
 
@@ -185,8 +201,8 @@ lives above chain validation (AGENTS.md §3C).
 | WebUI (`webroot/`) | implemented, shell/JS syntax-checked, HTTP fallback host-tested, **unverified in a real root manager** |
 | WebUI **Debug info** log panel | implemented, JS syntax-checked and `logs` CGI path host-tested, **unverified in a real root manager** |
 | `tmc` CLI | implemented, host-tested (add/remove/set/list/validate/logs), **unverified on device** |
-| Debug/product build channels (`DEBUG=0/1`, naming, `versionCode`) | implemented, both channels NDK-built, artifact/ZIP/`module.prop`/`strings` inspected; **workflow not yet run** |
-| Tag-driven GitHub release workflow | implemented, YAML validated locally, **unverified in GitHub Actions** |
+| Debug/product build channels (`DEBUG=0/1`, naming, `versionCode`) | implemented; both zips built and inspected locally and from the `v1.1.0` release assets |
+| Tag-driven GitHub release workflow | implemented; run 43516215096 succeeded and published `v1.1.0` (both channels + symbols) |
 | Installer packaging (`customize.sh`, perms, config seed) | implemented, full-zip build, **unverified on device** |
 | Test lib + server + APK stub | implemented, host-verified (lib+server); APK assembly needs Android Studio + device |
 | On-device log confirmation | **not done** — no rooted device available |
